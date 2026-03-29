@@ -619,6 +619,23 @@ src-tauri/src/
 - 浏览器扩展：当前不做，但预留一键打开 / 一键填入路线
 - 小模型：当前不依赖，但预留辅助站点识别、分类和置信度判断路线
 
+## UI Addendum (2026-03-29)
+
+### UI 已确认方向
+
+- UI 框架：`@fluentui/react-components`
+- UI 基调：标准 Fluent 工作台
+- 首页主视图：`Recent verification`
+- 主布局：左导航 + 中列表 + 右详情
+- 默认行为：高密度列表、动作优先、最新时间优先
+- 状态策略：已处理项进入次级分组，支持自动与手动并存
+
+### 详细文档
+
+- 决策记录：`ui-notes.md`
+- 线框与结构：`ui-wireframe.md`
+- PRD 可执行摘要：`prd-ui-summary.md`
+
 ## Implementation Plan (small PRs)
 
 - PR1：工程底座与模块拆分

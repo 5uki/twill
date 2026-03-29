@@ -56,7 +56,10 @@
     ".trellis/spec/guides/index.md",
     ".trellis/spec/guides/project-engineering-baseline.md",
     ".trellis/spec/guides/session-rules.md",
-    ".trellis/spec/guides/cross-layer-thinking-guide.md"
+    ".trellis/spec/guides/cross-layer-thinking-guide.md",
+    ".trellis/tasks/03-29-brainstorm-mail-client-planning/ui-notes.md",
+    ".trellis/tasks/03-29-brainstorm-mail-client-planning/ui-wireframe.md",
+    ".trellis/tasks/03-29-brainstorm-mail-client-planning/prd-ui-summary.md"
   ],
   "notes": "当前仓库仍是 Tauri 官方模板。环境中无 Python，Trellis 初始化与任务创建按脚本约定手工完成；当前目录也尚未初始化 git 仓库。",
   "meta": {
