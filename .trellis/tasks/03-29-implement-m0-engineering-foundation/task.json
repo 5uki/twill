@@ -1,0 +1,44 @@
+{
+  "id": "implement-m0-engineering-foundation",
+  "name": "implement-m0-engineering-foundation",
+  "title": "implement: M0 engineering foundation",
+  "description": "实现 M0 工程底座：目录分层、移除模板代码、建立 Rust 服务与 CLI 骨架、建立前端调用封装与页面壳层、搭建最小测试入口。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-03-29",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

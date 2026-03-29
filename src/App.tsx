@@ -1,51 +1,69 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { Button, MessageBar, MessageBarBody, Spinner, Text } from "@fluentui/react-components";
+import { startTransition, useEffect, useState } from "react";
 import "./App.css";
+import { WorkspaceShell } from "./features/workspace/WorkspaceShell";
+import type { WorkspaceBootstrapSnapshot } from "./features/workspace/model";
+import { toWorkspaceViewModel } from "./features/workspace/view-model";
+import { loadWorkspaceBootstrap } from "./lib/tauri/loadWorkspaceBootstrap";
+
+type AppState =
+  | { status: "loading" }
+  | { status: "ready"; snapshot: WorkspaceBootstrapSnapshot }
+  | { status: "error"; message: string };
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [state, setState] = useState<AppState>({ status: "loading" });
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  async function hydrateWorkspace() {
+    setState({ status: "loading" });
+
+    try {
+      const snapshot = await loadWorkspaceBootstrap();
+
+      startTransition(() => {
+        setState({ status: "ready", snapshot });
+      });
+    } catch (error) {
+      startTransition(() => {
+        setState({
+          status: "error",
+          message: error instanceof Error ? error.message : "工作台启动快照加载失败",
+        });
+      });
+    }
   }
 
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+  useEffect(() => {
+    void hydrateWorkspace();
+  }, []);
 
-      <div className="row">
-        <a href="https://vitejs.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://reactjs.org" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+  if (state.status === "loading") {
+    return (
+      <main className="app-state">
+        <div className="app-state__card">
+          <Spinner label="正在加载工作台底座..." size="large" />
+          <Text>当前会从 Tauri command 读取 M0 静态启动快照。</Text>
+        </div>
+      </main>
+    );
+  }
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+  if (state.status === "error") {
+    return (
+      <main className="app-state">
+        <div className="app-state__card app-state__card--error">
+          <MessageBar intent="error">
+            <MessageBarBody>{state.message}</MessageBarBody>
+          </MessageBar>
+          <Button appearance="primary" onClick={() => void hydrateWorkspace()}>
+            重新加载
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  return <WorkspaceShell viewModel={toWorkspaceViewModel(state.snapshot)} />;
 }
 
 export default App;

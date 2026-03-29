@@ -1,0 +1,19 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/tasks/03-29-implement-m0-engineering-foundation/prd.md", "reason": "M0 范围、契约与验收标准"}
+{"file": ".trellis/tasks/03-29-brainstorm-mail-client-planning/prd-ui-summary.md", "reason": "Recent verification 工作台壳层基线"}
+{"file": ".trellis/spec/guides/project-engineering-baseline.md", "reason": "TDD 与 CLI 交付硬规则"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流与边界检查"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Rust 模块拆分方向"}
+{"file": ".trellis/spec/backend/tauri-command-guidelines.md", "reason": "Tauri command 与 CLI 共用服务层约束"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Rust 侧 TDD、测试与检查要求"}
+{"file": ".trellis/spec/backend/type-safety.md", "reason": "Rust 边界类型与错误模型约束"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "前端目录组织参考"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "前端组件边界与结构入口"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端质量检查入口"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "前端类型边界入口"}
+{"file": "package.json", "reason": "前端脚本与测试入口现状"}
+{"file": "src/App.tsx", "reason": "当前模板页面入口，后续将替换"}
+{"file": "src-tauri/Cargo.toml", "reason": "Rust crate 与依赖现状"}
+{"file": "src-tauri/src/lib.rs", "reason": "当前 Tauri command 装配入口"}

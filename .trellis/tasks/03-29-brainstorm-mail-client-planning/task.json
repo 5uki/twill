@@ -36,7 +36,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "03-29-implement-m0-engineering-foundation"
+  ],
   "parent": null,
   "relatedFiles": [
     "README.md",

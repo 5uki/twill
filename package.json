@@ -4,16 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "ci:android-build": "bunx tauri android build --debug --apk --target aarch64 --ci",
+    "ci:ios-build": "bunx tauri ios build --debug --target aarch64-sim --ci",
+    "ci:verify": "bun test && bun run build && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features && cargo test --manifest-path src-tauri/Cargo.toml && cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- workspace bootstrap --format json",
+    "ci:desktop-build": "bunx tauri build --debug --no-bundle --ci",
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "bun test",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "@fluentui/react-components": "^9.73.5",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
