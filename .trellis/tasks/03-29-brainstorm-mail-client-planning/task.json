@@ -1,0 +1,70 @@
+{
+  "id": "brainstorm-mail-client-planning",
+  "name": "brainstorm-mail-client-planning",
+  "title": "brainstorm: Tauri 邮箱客户端项目规划",
+  "description": "梳理基于 Tauri 的邮箱客户端项目初始规划、MVP 边界、跨层架构与 CLI 模拟器策略。",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": "planning",
+  "priority": "P1",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-03-29",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "brainstorm"
+    },
+    {
+      "phase": 2,
+      "action": "research"
+    },
+    {
+      "phase": 3,
+      "action": "implement"
+    },
+    {
+      "phase": 4,
+      "action": "check"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "README.md",
+    "package.json",
+    "src/App.tsx",
+    "src/App.css",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/src/lib.rs",
+    ".trellis/workflow.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/backend/directory-structure.md",
+    ".trellis/spec/backend/tauri-command-guidelines.md",
+    ".trellis/spec/backend/quality-guidelines.md",
+    ".trellis/spec/backend/type-safety.md",
+    ".trellis/spec/frontend/index.md",
+    ".trellis/spec/guides/index.md",
+    ".trellis/spec/guides/project-engineering-baseline.md",
+    ".trellis/spec/guides/session-rules.md",
+    ".trellis/spec/guides/cross-layer-thinking-guide.md"
+  ],
+  "notes": "当前仓库仍是 Tauri 官方模板。环境中无 Python，Trellis 初始化与任务创建按脚本约定手工完成；当前目录也尚未初始化 git 仓库。",
+  "meta": {
+    "manual_bootstrap": true,
+    "python_available": false,
+    "git_repository_detected": false,
+    "missing_docs": [
+      ".trellis/spec/guides/project-context.md"
+    ]
+  }
+}

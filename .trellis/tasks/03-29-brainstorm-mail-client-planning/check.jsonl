@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality checklist"}
+{"file": ".trellis/spec/backend/tauri-command-guidelines.md", "reason": "Tauri command and CLI checklist"}
+{"file": ".trellis/spec/guides/project-engineering-baseline.md", "reason": "Project engineering baseline"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer contract checklist"}
