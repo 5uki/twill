@@ -82,7 +82,7 @@ export function toWorkspaceViewModel(
   return {
     appName: snapshot.app_name,
     title: VIEW_TITLES[snapshot.default_view],
-    subtitle: "多账号验证邮件工作台 · M0 工程底座",
+    subtitle: "多账号验证邮件工作台 · M0 壳层 + M1 账户接入首切片",
     generatedAtLabel: formatTimestamp(snapshot.generated_at),
     navigation: snapshot.navigation.map((item) => ({
       ...item,

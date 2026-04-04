@@ -2,8 +2,9 @@
 name = "twill"
 version = "0.1.0"
 description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+authors = ["5uki"]
+edition = "2024"
+default-run = "twill"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

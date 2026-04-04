@@ -37,7 +37,8 @@
   "pr_url": null,
   "subtasks": [],
   "children": [
-    "03-29-implement-m0-engineering-foundation"
+    "03-29-implement-m0-engineering-foundation",
+    "04-04-implement-m1-account-onboarding"
   ],
   "parent": null,
   "relatedFiles": [

@@ -1,0 +1,7 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".claude/commands/trellis/check-frontend.md", "reason": "Frontend check spec"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "审查 TDD、CLI 与测试覆盖"}
+{"file": ".trellis/tasks/03-29-brainstorm-mail-client-planning/prd-ui-summary.md", "reason": "审查 UI 是否承接既定工作台方向"}
+{"file": ".trellis/spec/backend/type-safety.md", "reason": "审查结构化输入输出与错误模型"}
+{"file": ".trellis/spec/backend/tauri-command-guidelines.md", "reason": "审查命令契约与 CLI 共享逻辑"}
