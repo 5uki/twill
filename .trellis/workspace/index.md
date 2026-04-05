@@ -1,24 +1,21 @@
 # Workspace Index
 
-> Records of all AI Agent work records across all developers
+> 全部 AI Agent 开发记录索引
 
 ---
 
 ## Overview
 
-This directory tracks records for all developers working with AI Agents on this project.
+该目录记录项目内所有开发者与 AI Agent 的协作轨迹。
 
 ### File Structure
 
-```
+```text
 workspace/
-|-- index.md              # This file - main index
-+-- {developer}/          # Per-developer directory
-    |-- index.md          # Personal index with session history
-    |-- tasks/         # Task files
-    |   |-- *.json        # Active tasks
-    |   +-- archive/      # Archived tasks by month
-    +-- journal-N.md     # Journal files (sequential: 1, 2, 3...)
+|-- index.md              # 主索引
++-- {developer}/          # 按开发者分目录
+    |-- index.md          # 个人索引
+    +-- journal-N.md      # 会话日志
 ```
 
 ---
@@ -27,97 +24,11 @@ workspace/
 
 | Developer | Last Active | Sessions | Active File |
 |-----------|-------------|----------|-------------|
-| codex-agent | 2026-03-29 | 0 | `journal-1.md` |
+| codex-agent | 2026-04-05 | 3 | `journal-1.md` |
 
 ---
 
-## Getting Started
+## Notes
 
-### For New Developers
-
-Run the initialization script:
-
-```bash
-python3 ./.trellis/scripts/init_developer.py <your-name>
-```
-
-This will:
-1. Create your identity file (gitignored)
-2. Create your progress directory
-3. Create your personal index
-4. Create initial journal file
-
-### For Returning Developers
-
-1. Get your developer name:
-   ```bash
-   python3 ./.trellis/scripts/get_developer.py
-   ```
-
-2. Read your personal index:
-   ```bash
-   cat .trellis/workspace/$(python3 ./.trellis/scripts/get_developer.py)/index.md
-   ```
-
----
-
-## Guidelines
-
-### Journal File Rules
-
-- **Max 2000 lines** per journal file
-- When limit is reached, create `journal-{N+1}.md`
-- Update your personal `index.md` when creating new files
-
-### Session Record Format
-
-Each session should include:
-- Summary: One-line description
-- Main Changes: What was modified
-- Git Commits: Commit hashes and messages
-- Next Steps: What to do next
-
----
-
-## Session Template
-
-Use this template when recording sessions:
-
-```markdown
-## Session {N}: {Title}
-
-**Date**: YYYY-MM-DD
-**Task**: {task-name}
-
-### Summary
-
-{One-line summary}
-
-### Main Changes
-
-- {Change 1}
-- {Change 2}
-
-### Git Commits
-
-| Hash | Message |
-|------|---------|
-| `abc1234` | {commit message} |
-
-### Testing
-
-- [OK] {Test result}
-
-### Status
-
-[OK] **Completed** / # **In Progress** / [P] **Blocked**
-
-### Next Steps
-
-- {Next step 1}
-- {Next step 2}
-```
-
----
-
-**Language**: All documentation must be written in **English**.
+- 用户要求“一个任务只保留一个最终提交”时，应把 `.trellis/workspace/` 更新直接并入最终代码提交
+- 若没有明确要求单独 metadata commit，则不要默认跑自动提交脚本

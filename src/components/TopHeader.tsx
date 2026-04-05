@@ -7,7 +7,7 @@ export function TopHeader() {
       <Input
         className="top-header-search"
         contentBefore={<SearchRegular />}
-        placeholder="Search emails, codes, or senders..."
+        placeholder="搜索邮件、验证码或发件人"
         appearance="outline"
       />
     </header>

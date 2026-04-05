@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceViewId {
     RecentVerification,
@@ -9,7 +9,7 @@ pub enum WorkspaceViewId {
     Accounts,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageCategory {
     Registration,
@@ -17,21 +17,28 @@ pub enum MessageCategory {
     Marketing,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageStatus {
     Pending,
     Processed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceExtractKind {
+    Code,
+    Link,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NavigationItem {
     pub id: WorkspaceViewId,
     pub label: String,
     pub badge: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceMessageItem {
     pub id: String,
     pub subject: String,
@@ -45,14 +52,14 @@ pub struct WorkspaceMessageItem {
     pub preview: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceMessageGroup {
     pub id: String,
     pub label: String,
     pub items: Vec<WorkspaceMessageItem>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceMessageDetail {
     pub id: String,
     pub subject: String,
@@ -67,7 +74,27 @@ pub struct WorkspaceMessageDetail {
     pub verification_link: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceExtractItem {
+    pub id: String,
+    pub sender: String,
+    pub kind: WorkspaceExtractKind,
+    pub value: String,
+    pub label: String,
+    pub progress_percent: u8,
+    pub expires_label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceSiteSummary {
+    pub id: String,
+    pub label: String,
+    pub hostname: String,
+    pub pending_count: u32,
+    pub latest_sender: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceBootstrapSnapshot {
     pub app_name: String,
     pub generated_at: String,
@@ -75,4 +102,8 @@ pub struct WorkspaceBootstrapSnapshot {
     pub navigation: Vec<NavigationItem>,
     pub message_groups: Vec<WorkspaceMessageGroup>,
     pub selected_message: WorkspaceMessageDetail,
+    #[serde(default)]
+    pub extracts: Vec<WorkspaceExtractItem>,
+    #[serde(default)]
+    pub site_summaries: Vec<WorkspaceSiteSummary>,
 }

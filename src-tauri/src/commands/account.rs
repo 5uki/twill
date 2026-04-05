@@ -28,10 +28,16 @@ pub fn add_account<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn test_account_connection(
+pub async fn test_account_connection(
     input: AccountConnectionTestInput,
 ) -> Result<AccountConnectionTestResult, AppError> {
-    let tester = LiveAccountConnectionTester::default();
+    tauri::async_runtime::spawn_blocking(move || {
+        let tester = LiveAccountConnectionTester::default();
 
-    account_service::test_account_connection(&tester, input)
+        account_service::test_account_connection(&tester, input)
+    })
+    .await
+    .map_err(|error| AppError::Storage {
+        message: format!("等待实时探测任务失败: {error}"),
+    })?
 }

@@ -1,0 +1,142 @@
+{
+  "app_name": "Twill",
+  "generated_at": "2026-03-29T09:00:00Z",
+  "default_view": "recent_verification",
+  "navigation": [
+    {
+      "id": "recent_verification",
+      "label": "Recent verification",
+      "badge": 12
+    },
+    {
+      "id": "all_inbox",
+      "label": "All inbox",
+      "badge": 128
+    },
+    {
+      "id": "site_list",
+      "label": "Sites",
+      "badge": 18
+    },
+    {
+      "id": "accounts",
+      "label": "Accounts",
+      "badge": 3
+    }
+  ],
+  "message_groups": [
+    {
+      "id": "pending",
+      "label": "待处理",
+      "items": [
+        {
+          "id": "msg_github_security",
+          "subject": "GitHub 安全验证码",
+          "sender": "noreply@github.com",
+          "account_name": "Primary Gmail",
+          "received_at": "2026-03-29T08:58:00Z",
+          "category": "security",
+          "status": "pending",
+          "has_code": true,
+          "has_link": false,
+          "preview": "你的 GitHub 登录验证码是 362149。"
+        },
+        {
+          "id": "msg_linear_verify",
+          "subject": "Linear 验证链接",
+          "sender": "hello@linear.app",
+          "account_name": "Work Outlook",
+          "received_at": "2026-03-29T08:41:00Z",
+          "category": "registration",
+          "status": "pending",
+          "has_code": false,
+          "has_link": true,
+          "preview": "点击邮件中的安全链接完成登录。"
+        }
+      ]
+    },
+    {
+      "id": "processed",
+      "label": "已处理",
+      "items": [
+        {
+          "id": "msg_notion_welcome",
+          "subject": "Notion 注册确认",
+          "sender": "team@makenotion.com",
+          "account_name": "Primary Gmail",
+          "received_at": "2026-03-29T07:12:00Z",
+          "category": "marketing",
+          "status": "processed",
+          "has_code": false,
+          "has_link": true,
+          "preview": "已完成注册，可继续打开欢迎链接。"
+        }
+      ]
+    }
+  ],
+  "selected_message": {
+    "id": "msg_github_security",
+    "subject": "GitHub 安全验证码",
+    "sender": "noreply@github.com",
+    "account_name": "Primary Gmail",
+    "received_at": "2026-03-29T08:58:00Z",
+    "category": "security",
+    "status": "pending",
+    "site_hint": "github.com",
+    "summary": "这是本轮 M0 的静态样例数据，用于驱动 Recent verification 工作台壳层。",
+    "extracted_code": "362149",
+    "verification_link": "https://github.com/login/device"
+  },
+  "extracts": [
+    {
+      "id": "extract_github_code",
+      "sender": "GitHub",
+      "kind": "code",
+      "value": "362149",
+      "label": "",
+      "progress_percent": 84,
+      "expires_label": "8m"
+    },
+    {
+      "id": "extract_linear_link",
+      "sender": "Linear",
+      "kind": "link",
+      "value": "https://linear.app/login",
+      "label": "Open login link",
+      "progress_percent": 42,
+      "expires_label": "4m"
+    },
+    {
+      "id": "extract_notion_link",
+      "sender": "Notion",
+      "kind": "link",
+      "value": "https://www.notion.so",
+      "label": "Continue setup",
+      "progress_percent": 18,
+      "expires_label": "1m"
+    }
+  ],
+  "site_summaries": [
+    {
+      "id": "site_github",
+      "label": "GitHub",
+      "hostname": "github.com",
+      "pending_count": 1,
+      "latest_sender": "noreply@github.com"
+    },
+    {
+      "id": "site_linear",
+      "label": "Linear",
+      "hostname": "linear.app",
+      "pending_count": 1,
+      "latest_sender": "hello@linear.app"
+    },
+    {
+      "id": "site_notion",
+      "label": "Notion",
+      "hostname": "notion.so",
+      "pending_count": 0,
+      "latest_sender": "team@makenotion.com"
+    }
+  ]
+}

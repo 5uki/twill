@@ -1,76 +1,88 @@
-import { Text, Avatar } from '@fluentui/react-components';
+import { Avatar, Badge, Text } from "@fluentui/react-components";
 import {
-  OpenRegular,
-  DismissRegular,
+  CheckboxUncheckedRegular,
   ChevronLeftRegular,
   ChevronRightRegular,
+  DismissRegular,
+  MailReadRegular,
+  MailUnreadRegular,
   Open16Filled,
-} from '@fluentui/react-icons';
+  OpenRegular,
+  StarRegular,
+} from "@fluentui/react-icons";
 import {
-  useState,
-  useRef,
   useEffect,
   useId,
+  useRef,
+  useState,
   type FocusEvent,
   type MouseEvent,
-} from 'react';
-import { ExtractTooltipPortal } from './ExtractTooltipPortal';
-import { getCircularAvatarMetrics } from './extract-geometry';
-import { getExtractActionHint } from './extract-tooltip';
+  type ReactNode,
+} from "react";
+import workspaceBootstrap from "../data/workspace-bootstrap.json";
+import type {
+  WorkspaceBootstrapSnapshot,
+  WorkspaceExtractItem,
+  WorkspaceMessageItem,
+  WorkspaceSiteSummary,
+} from "../lib/app-types";
+import type { WorkspaceCategory } from "../lib/workspace-view";
+import { getWorkspaceTitle } from "../lib/workspace-view";
+import { getCircularAvatarMetrics } from "./extract-geometry";
+import { ExtractTooltipPortal } from "./ExtractTooltipPortal";
+import { getExtractActionHint } from "./extract-tooltip";
 
-const mockMails = [
-  { id: '1', sender: 'GitHub', subject: '[GitHub] Please verify your device', preview: 'Verification code: 482910. This code expires in 10 minutes.', time: 'Just now', type: 'code', unread: true },
-  { id: '2', sender: 'Stripe', subject: 'Confirm your login to Stripe', preview: 'Click the link below to securely log in to your Stripe dashboard.', time: '10 mins ago', type: 'link', unread: true },
-  { id: '3', sender: 'Steam', subject: 'Steam Guard Computer Authorization', preview: 'Here is the Steam Guard code you need to login to account artaphy...', time: '1 hour ago', type: 'code', unread: false },
-  { id: '4', sender: 'AWS', subject: 'AWS Notification - Root Account Login', preview: 'Your AWS account root user has logged in from a new IP.', time: '2 hours ago', type: 'alert', unread: false },
-];
+const fallbackWorkspaceSnapshot =
+  workspaceBootstrap as WorkspaceBootstrapSnapshot;
 
-type ExtractItem = {
-  id: string;
-  sender: string;
-  type: 'code' | 'link';
-  value: string;
+const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function CircularProgressAvatar({
+  name,
+  progressPercent,
+  label,
+}: {
+  name: string;
+  progressPercent: number;
   label: string;
-  progress: number;
-  expiresLabel: string;
-};
-
-const mockExtractedCodes: ExtractItem[] = [
-  { id: 'c1', sender: 'GitHub', type: 'code', value: '482910', label: '', progress: 0.9, expiresLabel: '9m' },
-  { id: 'c2', sender: 'Stripe', type: 'link', value: '#', label: 'Sign In', progress: 0.4, expiresLabel: '4m' },
-  { id: 'c3', sender: 'Steam', type: 'code', value: 'R7KV2', label: '', progress: 0.1, expiresLabel: '1m' },
-  { id: 'c4', sender: 'Epic', type: 'code', value: 'A7X9-B2C1', label: '', progress: 0.75, expiresLabel: '12m' },
-  { id: 'c5', sender: 'Vercel', type: 'code', value: '912384', label: '', progress: 0.6, expiresLabel: '6m' },
-  { id: 'c6', sender: 'Figma', type: 'code', value: '7X391P', label: '', progress: 0.85, expiresLabel: '8m' },
-];
-
-const CircularProgressAvatar = ({ name, progress, label }: { name: string; progress: number; label: string }) => {
+}) {
   const metrics = getCircularAvatarMetrics();
+  const progress = Math.max(0, Math.min(progressPercent, 100)) / 100;
   const circumference = 2 * Math.PI * metrics.radius;
   const strokeDashoffset = circumference - progress * circumference;
-  const strokeColor = progress < 0.2 ? '#ef4444' : progress < 0.5 ? '#f59e0b' : '#3b82f6';
+  const strokeColor =
+    progress < 0.2 ? "#ef4444" : progress < 0.5 ? "#f59e0b" : "#3b82f6";
 
   return (
     <div className="circular-avatar-container">
-      <svg width={metrics.outerSize} height={metrics.outerSize} className="circular-avatar-svg">
+      <svg
+        className="circular-avatar-svg"
+        height={metrics.outerSize}
+        width={metrics.outerSize}
+      >
         <circle
           cx={metrics.center}
           cy={metrics.center}
-          r={metrics.radius}
           fill="none"
+          r={metrics.radius}
           stroke="#e5e7eb"
           strokeWidth={metrics.strokeWidth}
         />
         <circle
           cx={metrics.center}
           cy={metrics.center}
-          r={metrics.radius}
           fill="none"
+          r={metrics.radius}
           stroke={strokeColor}
-          strokeWidth={metrics.strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
+          strokeWidth={metrics.strokeWidth}
         />
       </svg>
       <div className="circular-avatar-label" style={{ color: strokeColor }}>
@@ -81,12 +93,24 @@ const CircularProgressAvatar = ({ name, progress, label }: { name: string; progr
       </div>
     </div>
   );
-};
+}
 
-const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => void }) => {
+function ExtractCard({
+  item,
+  onOpenLink,
+  onRemove,
+}: {
+  item: WorkspaceExtractItem;
+  onOpenLink: (url: string) => Promise<void> | void;
+  onRemove: () => void;
+}) {
   const [copied, setCopied] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [isTooltipVisible, setIsTooltipVisible] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
   const resetCopiedTimer = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const tooltipId = useId();
@@ -117,12 +141,12 @@ const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => vo
     };
 
     syncTooltipPosition();
-    window.addEventListener('resize', syncTooltipPosition);
-    window.addEventListener('scroll', syncTooltipPosition, true);
+    window.addEventListener("resize", syncTooltipPosition);
+    window.addEventListener("scroll", syncTooltipPosition, true);
 
     return () => {
-      window.removeEventListener('resize', syncTooltipPosition);
-      window.removeEventListener('scroll', syncTooltipPosition, true);
+      window.removeEventListener("resize", syncTooltipPosition);
+      window.removeEventListener("scroll", syncTooltipPosition, true);
     };
   }, [isTooltipVisible]);
 
@@ -142,9 +166,9 @@ const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => vo
     setIsTooltipVisible(false);
   };
 
-  const handleAction = () => {
-    if (item.type === 'code') {
-      void navigator.clipboard.writeText(item.value);
+  const handleAction = async () => {
+    if (item.kind === "code") {
+      await navigator.clipboard.writeText(item.value);
       setCopied(true);
 
       if (resetCopiedTimer.current !== null) {
@@ -158,11 +182,14 @@ const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => vo
       return;
     }
 
-    window.open(item.value, '_blank');
+    await onOpenLink(item.value);
   };
 
   const handleShellBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+    if (
+      event.relatedTarget instanceof Node &&
+      event.currentTarget.contains(event.relatedTarget)
+    ) {
       return;
     }
 
@@ -171,31 +198,43 @@ const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => vo
 
   const handleClose = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    onRemove();
+    setIsClosing(true);
+    hideTooltip();
+  };
+
+  const handleAnimationEnd = () => {
+    if (isClosing) {
+      onRemove();
+    }
   };
 
   const handleCloseBlur = (event: FocusEvent<HTMLButtonElement>) => {
-    if (event.relatedTarget instanceof Node && shellRef.current?.contains(event.relatedTarget)) {
+    if (
+      event.relatedTarget instanceof Node &&
+      shellRef.current?.contains(event.relatedTarget)
+    ) {
       return;
     }
 
     hideTooltip();
   };
 
-  const actionText = getExtractActionHint(item.type, copied);
-  const tooltipContent = actionText === null ? null : item.type === 'link' ? (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <Open16Filled style={{ color: '#60a5fa' }} />
+  const actionText = getExtractActionHint(item.kind, copied);
+  const tooltipContent =
+    actionText === null ? null : item.kind === "link" ? (
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <Open16Filled style={{ color: "#60a5fa" }} />
+        <span>{actionText}</span>
+      </div>
+    ) : (
       <span>{actionText}</span>
-    </div>
-  ) : (
-    <span>{actionText}</span>
-  );
+    );
 
   return (
     <div
       ref={shellRef}
-      className="extract-minimal-card-shell"
+      className={`extract-minimal-card-shell ${isClosing ? "extract-closing" : ""}`}
+      onAnimationEnd={handleAnimationEnd}
       onBlur={handleShellBlur}
       onFocus={showTooltip}
       onMouseEnter={showTooltip}
@@ -205,14 +244,24 @@ const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => vo
         aria-describedby={tooltipId}
         className="extract-minimal-card"
         type="button"
-        onClick={handleAction}
+        onClick={() => {
+          void handleAction();
+        }}
       >
-        <CircularProgressAvatar name={item.sender} progress={item.progress} label={item.expiresLabel} />
+        <CircularProgressAvatar
+          label={item.expires_label}
+          name={item.sender}
+          progressPercent={item.progress_percent}
+        />
         <div
-          className={`extract-minimal-code ${copied ? 'copied' : ''} ${item.type === 'link' ? 'link' : ''}`}
+          className={`extract-minimal-code ${copied ? "copied" : ""} ${
+            item.kind === "link" ? "link" : ""
+          }`}
         >
-          {copied ? 'Copied!' : (item.type === 'code' ? item.value : item.label)}
-          {item.type === 'link' && !copied && <OpenRegular fontSize={14} style={{ marginLeft: 6 }} />}
+          {copied ? "Copied!" : item.kind === "code" ? item.value : item.label}
+          {item.kind === "link" && !copied ? (
+            <OpenRegular fontSize={14} style={{ marginLeft: 6 }} />
+          ) : null}
         </div>
       </button>
       <ExtractTooltipPortal
@@ -235,86 +284,238 @@ const ExtractCard = ({ item, onRemove }: { item: ExtractItem; onRemove: () => vo
       </button>
     </div>
   );
-};
+}
 
-export function MailWorkspace({ category }: { category: string }) {
-  const [codes, setCodes] = useState<ExtractItem[]>(mockExtractedCodes);
+interface MailWorkspaceProps {
+  category: WorkspaceCategory;
+  snapshot?: WorkspaceBootstrapSnapshot;
+  accountsView?: ReactNode;
+  onOpenVerificationLink?: (url: string) => Promise<void> | void;
+}
+
+export function MailWorkspace({
+  category,
+  snapshot = fallbackWorkspaceSnapshot,
+  accountsView,
+  onOpenVerificationLink,
+}: MailWorkspaceProps) {
+  const [extracts, setExtracts] = useState(snapshot.extracts);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(false);
 
+  useEffect(() => {
+    setExtracts(snapshot.extracts);
+  }, [snapshot]);
+
   const checkScroll = () => {
-    if (scrollRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-      setShowLeft(scrollLeft > 0);
-      setShowRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth);
+    if (!scrollRef.current) {
+      return;
     }
+
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+    setShowLeft(scrollLeft > 0);
+    setShowRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth);
   };
 
   useEffect(() => {
     checkScroll();
-    window.addEventListener('resize', checkScroll);
-    return () => window.removeEventListener('resize', checkScroll);
-  }, [codes]);
+    window.addEventListener("resize", checkScroll);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      const amount = 300;
-      scrollRef.current.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
+    return () => window.removeEventListener("resize", checkScroll);
+  }, [extracts]);
+
+  const scroll = (direction: "left" | "right") => {
+    if (!scrollRef.current) {
+      return;
     }
+
+    scrollRef.current.scrollBy({
+      left: direction === "left" ? -300 : 300,
+      behavior: "smooth",
+    });
   };
+
+  const visibleMessages = getVisibleMessages(snapshot, category);
+  const title = getWorkspaceTitle(category);
+  const openLink =
+    onOpenVerificationLink ??
+    ((url: string) => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+
+  if (category === "accounts") {
+    return (
+      <div className="workspace-content">
+        <div className="workspace-title-row">
+          <Text style={{ fontWeight: 600, fontSize: "18px" }}>{title}</Text>
+        </div>
+        {accountsView}
+      </div>
+    );
+  }
+
+  if (category === "sites") {
+    return (
+      <div className="workspace-content">
+        <div className="workspace-title-row">
+          <Text style={{ fontWeight: 600, fontSize: "18px" }}>{title}</Text>
+        </div>
+        <div className="site-grid">
+          {snapshot.site_summaries.map((site) => (
+            <SiteCard key={site.id} site={site} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const showExtracts = category === "verifications" && extracts.length > 0;
 
   return (
     <div className="workspace-content">
-      {(category === 'inbox' || category === 'verifications') && codes.length > 0 ? (
+      {showExtracts ? (
         <div className="extract-zone-wrapper">
-          {showLeft && (
-            <div className="extract-scroll-button left" onClick={() => scroll('left')}>
+          {showLeft ? (
+            <button
+              className="extract-scroll-button left"
+              type="button"
+              onClick={() => scroll("left")}
+            >
               <ChevronLeftRegular fontSize={24} />
-            </div>
-          )}
+            </button>
+          ) : null}
           <div className="extract-zone" ref={scrollRef} onScroll={checkScroll}>
-            {codes.map(item => (
+            {extracts.map((item) => (
               <ExtractCard
                 key={item.id}
                 item={item}
-                onRemove={() => setCodes(prev => prev.filter(current => current.id !== item.id))}
+                onOpenLink={openLink}
+                onRemove={() =>
+                  setExtracts((current) =>
+                    current.filter((extract) => extract.id !== item.id),
+                  )
+                }
               />
             ))}
           </div>
-          {showRight && (
-            <div className="extract-scroll-button right" onClick={() => scroll('right')}>
+          {showRight ? (
+            <button
+              className="extract-scroll-button right"
+              type="button"
+              onClick={() => scroll("right")}
+            >
               <ChevronRightRegular fontSize={24} />
-            </div>
-          )}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <Text style={{ fontWeight: 600, fontSize: '18px' }}>
-          {category === 'inbox' ? 'Inbox' : category === 'verifications' ? 'Verifications' : category === 'alerts' ? 'Security Alerts' : 'Archive'}
-        </Text>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div className="workspace-title-row">
+          <Text style={{ fontWeight: 600, fontSize: "18px" }}>{title}</Text>
+        </div>
 
         <div className="mail-list">
-          {mockMails.map((mail) => (
-            <div key={mail.id} className={`mail-item ${mail.unread ? 'unread' : ''}`}>
-              <div style={{ width: '140px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Avatar name={mail.sender} size={28} />
-                <Text style={{ fontWeight: mail.unread ? 600 : 400 }}>{mail.sender}</Text>
-              </div>
-
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 16px', overflow: 'hidden' }}>
-                <Text style={{ fontWeight: mail.unread ? 600 : 400 }} className="text-truncate">{mail.subject}</Text>
-                <Text style={{ color: '#6b7280', fontSize: '13px' }} className="text-truncate">{mail.preview}</Text>
-              </div>
-
-              <div style={{ width: '100px', textAlign: 'right', color: '#6b7280', fontSize: '13px' }}>
-                {mail.time}
-              </div>
-            </div>
+          {visibleMessages.map((mail) => (
+            <MessageCard key={mail.id} message={mail} />
           ))}
         </div>
       </div>
     </div>
   );
+}
+
+function MessageCard({ message }: { message: WorkspaceMessageItem }) {
+  const isUnread = message.status === "pending";
+
+  return (
+    <div className={`mail-item ${isUnread ? "unread" : "read"}`}>
+      <div className="mail-item-leading">
+        <span className="mail-item-checkbox" aria-hidden="true">
+          <CheckboxUncheckedRegular fontSize={18} />
+        </span>
+        <span
+          className={`mail-item-envelope ${isUnread ? "unread" : "read"}`}
+          aria-hidden="true"
+        >
+          {isUnread ? (
+            <MailUnreadRegular fontSize={18} />
+          ) : (
+            <MailReadRegular fontSize={18} />
+          )}
+        </span>
+      </div>
+
+      <div className="mail-item-sender">
+        <Text
+          className="text-truncate"
+          style={{ fontWeight: isUnread ? 600 : 400 }}
+        >
+          {message.sender}
+        </Text>
+      </div>
+
+      <div className="mail-item-body">
+        <Text
+          as="span"
+          className={`mail-item-subject ${isUnread ? "unread" : "read"}`}
+        >
+          {message.subject}
+        </Text>
+        <Text
+          as="span"
+          className="text-truncate"
+          style={{ color: "#6b7280", fontSize: "13px" }}
+        >
+          {message.preview}
+        </Text>
+      </div>
+
+      <div className="mail-item-meta">
+        <Text as="span" className="mail-item-date">
+          {dateFormatter.format(new Date(message.received_at))}
+        </Text>
+        <span className="mail-item-star" aria-hidden="true">
+          <StarRegular fontSize={18} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SiteCard({ site }: { site: WorkspaceSiteSummary }) {
+  return (
+    <div className="site-card">
+      <div className="site-card-header">
+        <div>
+          <Text className="site-card-title">{site.label}</Text>
+          <Text className="site-card-subtitle">{site.hostname}</Text>
+        </div>
+        <Badge appearance="tint">
+          待处理 {site.pending_count}
+        </Badge>
+      </div>
+      <Text className="site-card-body">
+        最近一次来自 {site.latest_sender}，可以直接回到验证列表继续处理。
+      </Text>
+    </div>
+  );
+}
+
+function getVisibleMessages(
+  snapshot: WorkspaceBootstrapSnapshot,
+  category: WorkspaceCategory,
+) {
+  const messages = snapshot.message_groups.flatMap((group) => group.items);
+
+  if (category === "verifications") {
+    return messages.filter((message) => message.has_code || message.has_link);
+  }
+
+  if (category === "inbox") {
+    return messages;
+  }
+
+  return [];
 }

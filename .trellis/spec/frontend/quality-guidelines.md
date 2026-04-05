@@ -1,53 +1,52 @@
-# Quality Guidelines
+# 前端质量规范
 
-> Code quality standards for frontend development.
-
----
-
-## Overview
-
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
+> 面向 `src/` 的 React + TypeScript 实现约束，重点覆盖桌面壳层、用户文案和回归测试。
 
 ---
 
-## Forbidden Patterns
+## 禁止模式
 
-<!-- Patterns that should never be used and why -->
+### 不要把开发者实现细节直接暴露给用户
 
-(To be filled by the team)
+- 不要在正常产品界面里直接出现 `Tauri`、`CLI`、`Rust`、`contract`、`bootstrap`、`generated_at` 这类实现词汇。
+- 不要把“为什么代码这样写”当作用户提示文案。
+- 不要让字段名、按钮名停留在开发期英文占位，例如 `Display Name`、`Live Probe`、`Refresh`。
+
+### 不要让前后端样例数据再分叉
+
+- 工作台样例数据只能维护一份共享源，不能在组件里再手写另一份 `mockMessages` / `mockSites`。
+- 如果某块数据仍是阶段性样例，界面层要表现得像产品，不要把“调试快照”直接展示给用户。
 
 ---
 
-## Required Patterns
+## 必需模式
 
 ### Desktop Shell Invariants
 
-- Tauri desktop builds must keep `base: "./"` in `vite.config.ts`.
-- If `base` falls back to `/`, bundled assets resolve against the filesystem root after a WebView refresh and the app can render a blank screen.
-- Custom overlays inside scrollable desktop surfaces should render through a portal to `document.body`.
-- Do not use browser-native `title` tooltips for extract pills, titlebar controls, or other dense desktop interactions.
+- Tauri 桌面构建必须保留 `vite.config.ts` 里的 `base: "./"`。
+- 若 `base` 回退成 `/`，WebView 刷新后静态资源会从文件系统根路径解析，应用可能白屏。
+- 滚动容器里的自定义浮层应通过 portal 渲染到 `document.body`。
+- 不要对提取卡片、标题栏控件等密集交互区域使用浏览器原生 `title` tooltip。
+
+### User-Facing Copy
+
+- 用户界面优先描述“用户要做什么”或“当前状态是什么”，而不是描述底层实现。
+- 技术限制需要转成用户视角，例如“当前环境不支持保存账号，请在桌面端使用”，不要写成“请在 Tauri / CLI 验证”。
+- 帐号、邮件、网站管理等页面的文案应直接服务任务完成，不解释字段来自哪一层。
 
 ---
 
-## Testing Requirements
+## 测试要求
 
-- Add a focused Bun test for each non-obvious desktop shell regression.
-- For Tauri shell fixes, prefer assertions on config and helper contracts in addition to normal UI build/test coverage.
+- 每个非显而易见的桌面壳层回归都要补一条聚焦 Bun 测试。
+- 文案清理不是纯视觉细节；如果这类回归容易重复出现，应补字符串或静态 markup 断言。
+- 对 Tauri 壳层修复，优先同时断言配置合同和 UI 结果，不只看构建是否通过。
 
 ---
 
 ## Code Review Checklist
 
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- [ ] 新文案是否面向最终用户，而不是面向开发者或调试者
+- [ ] 桌面壳层约束是否被保持，例如 `base: "./"`、portal 浮层、标题栏交互
+- [ ] 是否复用了共享数据源，而不是新增一份前端私有 mock
+- [ ] 是否为非显而易见的 UI / 壳层回归补了聚焦测试

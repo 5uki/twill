@@ -7,10 +7,12 @@ use crate::domain::error::AppError;
 pub trait AccountRepository {
     fn list_accounts(&self) -> Result<Vec<AccountSummary>, AppError>;
     fn save_account(&self, account: &AccountSummary) -> Result<(), AppError>;
+    fn delete_account(&self, account_id: &str) -> Result<(), AppError>;
 }
 
 pub trait AccountSecretStore {
     fn save_secret(&self, account_id: &str, secret: &str) -> Result<(), AppError>;
+    #[allow(dead_code)]
     fn delete_secret(&self, account_id: &str) -> Result<(), AppError>;
     fn has_secret(&self, account_id: &str) -> Result<bool, AppError>;
 }
@@ -61,34 +63,24 @@ where
     validate_mail_server("imap", &input.imap)?;
     validate_mail_server("smtp", &input.smtp)?;
 
-    let existing_accounts = repository.list_accounts()?;
-
-    if existing_accounts
-        .iter()
-        .any(|account| account.email.eq_ignore_ascii_case(input.email.trim()))
-    {
-        return Err(AppError::Validation {
-            field: "email".to_string(),
-            message: "该邮箱地址已经存在".to_string(),
-        });
-    }
-
-    let account = AccountSummary {
-        id: build_account_id(existing_accounts.len() + 1, &input.email),
+    let mut account = AccountSummary {
+        id: build_account_id(&input.email),
         display_name: input.display_name.trim().to_string(),
         email: input.email.trim().to_string(),
         login: input.login.trim().to_string(),
-        credential_state: AccountCredentialState::Stored,
+        credential_state: AccountCredentialState::Missing,
         imap: sanitize_server(input.imap),
         smtp: sanitize_server(input.smtp),
     };
 
-    secret_store.save_secret(&account.id, &input.password)?;
+    repository.save_account(&account)?;
 
-    if let Err(error) = repository.save_account(&account) {
-        let _ = secret_store.delete_secret(&account.id);
+    if let Err(error) = secret_store.save_secret(&account.id, &input.password) {
+        let _ = repository.delete_account(&account.id);
         return Err(error);
     }
+
+    account.credential_state = AccountCredentialState::Stored;
 
     Ok(account)
 }
@@ -204,11 +196,9 @@ fn validate_mail_server(
     Ok(())
 }
 
-fn build_account_id(sequence: usize, email: &str) -> String {
+fn build_account_id(email: &str) -> String {
     let account_label = email
-        .split('@')
-        .next()
-        .unwrap_or("account")
+        .trim()
         .chars()
         .map(|character| {
             if character.is_ascii_alphanumeric() {
@@ -221,7 +211,13 @@ fn build_account_id(sequence: usize, email: &str) -> String {
         .trim_matches('-')
         .to_string();
 
-    format!("acct_{sequence}_{account_label}")
+    let account_label = if account_label.is_empty() {
+        "account".to_string()
+    } else {
+        account_label
+    };
+
+    format!("acct_{account_label}")
 }
 
 #[cfg(test)]
@@ -243,6 +239,7 @@ mod tests {
     struct InMemoryAccountRepository {
         accounts: RefCell<Vec<AccountSummary>>,
         fail_on_save: RefCell<bool>,
+        deleted_accounts: RefCell<Vec<String>>,
     }
 
     impl AccountRepository for InMemoryAccountRepository {
@@ -257,7 +254,30 @@ mod tests {
                 });
             }
 
+            if self
+                .accounts
+                .borrow()
+                .iter()
+                .any(|existing| existing.email.eq_ignore_ascii_case(&account.email))
+            {
+                return Err(AppError::Validation {
+                    field: "email".to_string(),
+                    message: "该邮箱地址已经存在".to_string(),
+                });
+            }
+
             self.accounts.borrow_mut().push(account.clone());
+
+            Ok(())
+        }
+
+        fn delete_account(&self, account_id: &str) -> Result<(), AppError> {
+            self.accounts
+                .borrow_mut()
+                .retain(|account| account.id != account_id);
+            self.deleted_accounts
+                .borrow_mut()
+                .push(account_id.to_string());
 
             Ok(())
         }
@@ -327,7 +347,7 @@ mod tests {
             .expect("新增账户应成功");
         let accounts = list_accounts(&repository, &secret_store).expect("列出账户应成功");
 
-        assert_eq!(account.id, "acct_1_primary");
+        assert_eq!(account.id, "acct_primary-example-com");
         assert_eq!(account.credential_state, AccountCredentialState::Stored);
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0].email, "primary@example.com");
@@ -397,13 +417,13 @@ mod tests {
     }
 
     #[test]
-    fn rolls_back_secret_when_metadata_save_fails() {
+    fn does_not_store_secret_when_metadata_save_fails() {
         let repository = InMemoryAccountRepository::default();
         let secret_store = InMemorySecretStore::default();
         *repository.fail_on_save.borrow_mut() = true;
 
         let error = add_account(&repository, &secret_store, sample_add_account_input())
-            .expect_err("元数据保存失败时应回滚 secret");
+            .expect_err("元数据保存失败时应直接返回错误");
 
         assert_eq!(
             error,
@@ -412,11 +432,39 @@ mod tests {
             }
         );
         assert!(
-            secret_store
+            secret_store.stored_accounts.borrow().is_empty(),
+            "元数据保存失败时不应写入系统凭据"
+        );
+    }
+
+    #[test]
+    fn rolls_back_metadata_when_secret_save_fails() {
+        let repository = InMemoryAccountRepository::default();
+        let secret_store = InMemorySecretStore::default();
+        *secret_store.fail_on_save.borrow_mut() = true;
+
+        let error = add_account(&repository, &secret_store, sample_add_account_input())
+            .expect_err("系统安全存储写入失败时应回滚元数据");
+
+        assert_eq!(
+            error,
+            AppError::Storage {
+                message: "系统安全存储写入失败".to_string(),
+            }
+        );
+        assert!(
+            repository
+                .list_accounts()
+                .expect("读取账户应成功")
+                .is_empty(),
+            "系统安全存储失败时应删除刚写入的账户元数据"
+        );
+        assert!(
+            repository
                 .deleted_accounts
                 .borrow()
-                .contains(&"acct_1_primary".to_string()),
-            "元数据写入失败时应删除已写入的系统凭据"
+                .contains(&"acct_primary-example-com".to_string()),
+            "系统安全存储失败时应记录回滚删除"
         );
     }
 
@@ -443,6 +491,35 @@ mod tests {
 
         assert_eq!(result.status, AccountConnectionStatus::Passed);
         assert_eq!(result.checks.len(), 1);
+    }
+
+    #[test]
+    fn builds_account_id_from_normalized_email_instead_of_sequence() {
+        let repository = InMemoryAccountRepository::default();
+        let secret_store = InMemorySecretStore::default();
+
+        repository.accounts.borrow_mut().push(AccountSummary {
+            id: "acct_existing".to_string(),
+            display_name: "Existing".to_string(),
+            email: "existing@example.com".to_string(),
+            login: "existing@example.com".to_string(),
+            credential_state: AccountCredentialState::Stored,
+            imap: MailServerConfig {
+                host: "imap.example.com".to_string(),
+                port: 993,
+                security: MailSecurity::Tls,
+            },
+            smtp: MailServerConfig {
+                host: "smtp.example.com".to_string(),
+                port: 587,
+                security: MailSecurity::StartTls,
+            },
+        });
+
+        let account = add_account(&repository, &secret_store, sample_add_account_input())
+            .expect("新增账户应成功");
+
+        assert_eq!(account.id, "acct_primary-example-com");
     }
 
     fn sample_add_account_input() -> AddAccountInput {
