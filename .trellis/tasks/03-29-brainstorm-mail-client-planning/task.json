@@ -36,7 +36,10 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "04-05-implement-m1-live-connectivity-probe",
+    "04-05-implement-m1-secure-credential-storage"
+  ],
   "parent": null,
   "relatedFiles": [
     "README.md",

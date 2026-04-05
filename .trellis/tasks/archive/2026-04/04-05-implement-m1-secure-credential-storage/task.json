@@ -1,0 +1,44 @@
+{
+  "id": "04-05-implement-m1-secure-credential-storage",
+  "name": "04-05-implement-m1-secure-credential-storage",
+  "title": "implement: M1 secure credential storage",
+  "description": "为账户 onboarding 接入系统级安全存储，打通密码输入、账户保存与凭据状态展示。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-05",
+  "completedAt": "2026-04-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

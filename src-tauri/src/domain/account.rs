@@ -20,6 +20,7 @@ pub struct AddAccountInput {
     pub display_name: String,
     pub email: String,
     pub login: String,
+    pub password: String,
     pub imap: MailServerConfig,
     pub smtp: MailServerConfig,
 }
@@ -39,8 +40,18 @@ pub struct AccountSummary {
     pub display_name: String,
     pub email: String,
     pub login: String,
+    #[serde(default)]
+    pub credential_state: AccountCredentialState,
     pub imap: MailServerConfig,
     pub smtp: MailServerConfig,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountCredentialState {
+    #[default]
+    Missing,
+    Stored,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

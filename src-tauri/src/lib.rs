@@ -12,6 +12,7 @@ use commands::workspace::load_workspace_bootstrap;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_secure_storage::init())
         .invoke_handler(tauri::generate_handler![
             load_workspace_bootstrap,
             list_accounts,

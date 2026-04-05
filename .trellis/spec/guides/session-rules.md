@@ -40,3 +40,14 @@
 - 运行 `/trellis:finish-work`
 - 测试并提交代码
 - 在提交后运行 `/trellis:record-session`
+
+---
+
+## 单任务单提交偏好
+
+如果用户明确提出“一个任务尽量只保留一个最终提交”，则：
+
+1. AI 应先准备好 `.trellis/tasks/`、`.trellis/workspace/` 中需要落盘的记录
+2. 优先把代码与 Trellis 元数据一起交给人类做最终提交
+3. 不应默认再额外触发一次 `record-session` 自动生成独立的 `.trellis/` commit
+4. 只有在用户明确要求单独补记 session 时，才走自动脚本与独立元数据提交

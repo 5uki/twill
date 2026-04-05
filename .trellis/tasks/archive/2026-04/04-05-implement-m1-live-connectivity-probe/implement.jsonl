@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/tasks/04-05-04-05-implement-m1-live-connectivity-probe/prd.md", "reason": "本轮 live probe 的范围、验收标准与边界"}
+{"file": "src-tauri/src/services/account_service.rs", "reason": "账户服务边界与 tester 抽象入口"}
+{"file": "src-tauri/src/infra/account_preflight.rs", "reason": "现有规则预检实现，需要演进为真实探测"}
+{"file": "src-tauri/src/cli/mod.rs", "reason": "CLI account test 契约与输出"}
+{"file": "src/features/accounts/AccountsWorkspacePanel.tsx", "reason": "Accounts 工作台文案与交互入口"}

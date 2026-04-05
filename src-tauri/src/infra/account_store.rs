@@ -83,7 +83,9 @@ fn ensure_parent_directory(path: &Path) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::JsonFileAccountRepository;
-    use crate::domain::account::{AccountSummary, MailSecurity, MailServerConfig};
+    use crate::domain::account::{
+        AccountCredentialState, AccountSummary, MailSecurity, MailServerConfig,
+    };
     use crate::services::account_service::AccountRepository;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -95,6 +97,7 @@ mod tests {
             display_name: "Primary".to_string(),
             email: "primary@example.com".to_string(),
             login: "primary@example.com".to_string(),
+            credential_state: AccountCredentialState::Stored,
             imap: MailServerConfig {
                 host: "imap.example.com".to_string(),
                 port: 993,

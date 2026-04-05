@@ -257,6 +257,17 @@ This automatically:
 3. Appends session content
 4. Updates index.md (sessions count, history table)
 
+### Single-Commit Preference
+
+If the user explicitly prefers **one task = one final human commit**, then:
+
+1. Prepare `.trellis/tasks/` and `.trellis/workspace/` updates before the human creates the final code commit
+2. Prefer manual journal / index / task updates in the working tree
+3. Do not run `record-session` or `add_session.py` in auto-commit mode unless the user explicitly asks for a separate `.trellis/` metadata commit
+4. Treat the auto-commit path as optional support, not a mandatory extra commit
+
+Default preference in this repository: when the user asks to avoid an extra metadata commit, keep **code changes and Trellis records in the same final human commit**.
+
 ### Pre-end Checklist
 
 Use `/trellis:finish-work` command to run through:

@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "src-tauri/src/domain/account.rs", "reason": "账户输入输出结构需要接入密码与凭据状态"}
+{"file": ".trellis/tasks/04-05-04-05-implement-m1-secure-credential-storage/prd.md", "reason": "M1 安全存储切片的目标与边界"}
+{"file": "src-tauri/src/services/account_service.rs", "reason": "账户保存逻辑需要同时处理元数据与系统安全存储"}
+{"file": "src/features/accounts/AccountsWorkspacePanel.tsx", "reason": "前端账户表单需要补密码输入与凭据状态"}

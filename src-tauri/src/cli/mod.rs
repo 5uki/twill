@@ -1,13 +1,18 @@
 use crate::domain::account::{
-    AccountConnectionStatus, AccountConnectionTestInput, AccountConnectionTestResult,
-    AddAccountInput, MailSecurity, MailServerConfig,
+    AccountConnectionCheckTarget, AccountConnectionStatus, AccountConnectionTestInput,
+    AccountConnectionTestResult, AccountCredentialState, AddAccountInput, MailSecurity,
+    MailServerConfig,
 };
 use crate::domain::error::AppError;
-use crate::infra::account_preflight::RuleBasedAccountConnectionTester;
+use crate::infra::account_preflight::LiveAccountConnectionTester;
+use crate::infra::account_secret_store::KeyringAccountSecretStore;
 use crate::infra::account_store::JsonFileAccountRepository;
-use crate::services::{account_service, workspace_service};
+use crate::services::account_service::{
+    self, AccountConnectionTester, AccountRepository, AccountSecretStore,
+};
+use crate::services::workspace_service;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 enum OutputFormat {
     Text,
@@ -31,6 +36,26 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
+    let repository = JsonFileAccountRepository::new(store_path);
+    let secret_store = KeyringAccountSecretStore::from_default_service_name();
+    let tester = LiveAccountConnectionTester::default();
+
+    run_with_args_and_dependencies(args, &repository, &secret_store, &tester)
+}
+
+fn run_with_args_and_dependencies<I, S, R, SecretStore, Tester>(
+    args: I,
+    repository: &R,
+    secret_store: &SecretStore,
+    tester: &Tester,
+) -> Result<String, AppError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+    R: AccountRepository,
+    SecretStore: AccountSecretStore,
+    Tester: AccountConnectionTester,
+{
     let args = args
         .into_iter()
         .map(|value| value.as_ref().to_string())
@@ -46,14 +71,14 @@ where
             render_workspace_bootstrap(parse_output_format(value)?)
         }
         [account, list] if account == "account" && list == "list" => {
-            render_account_list(OutputFormat::Text, &store_path)
+            render_account_list(OutputFormat::Text, repository, secret_store)
         }
         [account, list, rest @ ..] if account == "account" && list == "list" => {
             let mut flags = parse_flags(rest)?;
             let format = take_output_format(&mut flags)?;
 
             ensure_no_unknown_flags(&flags)?;
-            render_account_list(format, &store_path)
+            render_account_list(format, repository, secret_store)
         }
         [account, add, rest @ ..] if account == "account" && add == "add" => {
             let mut flags = parse_flags(rest)?;
@@ -61,7 +86,7 @@ where
             let input = parse_add_account_input(&mut flags)?;
 
             ensure_no_unknown_flags(&flags)?;
-            render_add_account(format, &store_path, input)
+            render_add_account(format, repository, secret_store, input)
         }
         [account, test, rest @ ..] if account == "account" && test == "test" => {
             let mut flags = parse_flags(rest)?;
@@ -69,14 +94,14 @@ where
             let input = parse_account_test_input(&mut flags)?;
 
             ensure_no_unknown_flags(&flags)?;
-            render_account_test(format, input)
+            render_account_test(format, tester, input)
         }
         _ => Err(AppError::InvalidCliArgs {
             message: concat!(
                 "用法:\n",
                 "  workspace bootstrap [--format text|json]\n",
                 "  account list [--format text|json]\n",
-                "  account add --name <name> --email <email> --login <login> ",
+                "  account add --name <name> --email <email> --login <login> --password <password> ",
                 "--imap-host <host> --imap-port <port> --imap-security <none|start_tls|tls> ",
                 "--smtp-host <host> --smtp-port <port> --smtp-security <none|start_tls|tls> ",
                 "[--format text|json]\n",
@@ -127,9 +152,16 @@ fn render_workspace_bootstrap(format: OutputFormat) -> Result<String, AppError> 
     }
 }
 
-fn render_account_list(format: OutputFormat, store_path: &Path) -> Result<String, AppError> {
-    let repository = JsonFileAccountRepository::new(store_path);
-    let accounts = account_service::list_accounts(&repository)?;
+fn render_account_list<R, SecretStore>(
+    format: OutputFormat,
+    repository: &R,
+    secret_store: &SecretStore,
+) -> Result<String, AppError>
+where
+    R: AccountRepository,
+    SecretStore: AccountSecretStore,
+{
+    let accounts = account_service::list_accounts(repository, secret_store)?;
 
     match format {
         OutputFormat::Json => {
@@ -145,9 +177,10 @@ fn render_account_list(format: OutputFormat, store_path: &Path) -> Result<String
                     .iter()
                     .map(|account| {
                         format!(
-                            "- {} <{}> | IMAP {}:{} {:?} | SMTP {}:{} {:?}",
+                            "- {} <{}> | 凭据 {} | IMAP {}:{} {:?} | SMTP {}:{} {:?}",
                             account.display_name,
                             account.email,
+                            format_credential_state(account.credential_state),
                             account.imap.host,
                             account.imap.port,
                             account.imap.security,
@@ -159,19 +192,23 @@ fn render_account_list(format: OutputFormat, store_path: &Path) -> Result<String
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                Ok(format!("已保存账户:\n{lines}"))
+                Ok(format!("已保存账户\n{lines}"))
             }
         }
     }
 }
 
-fn render_add_account(
+fn render_add_account<R, SecretStore>(
     format: OutputFormat,
-    store_path: &Path,
+    repository: &R,
+    secret_store: &SecretStore,
     input: AddAccountInput,
-) -> Result<String, AppError> {
-    let repository = JsonFileAccountRepository::new(store_path);
-    let account = account_service::add_account(&repository, input)?;
+) -> Result<String, AppError>
+where
+    R: AccountRepository,
+    SecretStore: AccountSecretStore,
+{
+    let account = account_service::add_account(repository, secret_store, input)?;
 
     match format {
         OutputFormat::Json => {
@@ -180,10 +217,11 @@ fn render_add_account(
             })
         }
         OutputFormat::Text => Ok(format!(
-            "账户已保存\nID: {}\n名称: {}\n邮箱: {}\nIMAP: {}:{} ({:?})\nSMTP: {}:{} ({:?})",
+            "账户已保存\nID: {}\n名称: {}\n邮箱: {}\n凭据: {}\nIMAP: {}:{} ({:?})\nSMTP: {}:{} ({:?})",
             account.id,
             account.display_name,
             account.email,
+            format_credential_state(account.credential_state),
             account.imap.host,
             account.imap.port,
             account.imap.security,
@@ -194,12 +232,15 @@ fn render_add_account(
     }
 }
 
-fn render_account_test(
+fn render_account_test<T>(
     format: OutputFormat,
+    tester: &T,
     input: AccountConnectionTestInput,
-) -> Result<String, AppError> {
-    let tester = RuleBasedAccountConnectionTester;
-    let result = account_service::test_account_connection(&tester, input)?;
+) -> Result<String, AppError>
+where
+    T: AccountConnectionTester,
+{
+    let result = account_service::test_account_connection(tester, input)?;
 
     match format {
         OutputFormat::Json => {
@@ -222,9 +263,9 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
         .iter()
         .map(|check| {
             let target = match check.target {
-                crate::domain::account::AccountConnectionCheckTarget::Identity => "Identity",
-                crate::domain::account::AccountConnectionCheckTarget::Imap => "IMAP",
-                crate::domain::account::AccountConnectionCheckTarget::Smtp => "SMTP",
+                AccountConnectionCheckTarget::Identity => "Identity",
+                AccountConnectionCheckTarget::Imap => "IMAP",
+                AccountConnectionCheckTarget::Smtp => "SMTP",
             };
             let check_status = match check.status {
                 AccountConnectionStatus::Passed => "通过",
@@ -237,9 +278,16 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
         .join("\n");
 
     format!(
-        "账户连接预检\n状态: {status}\n结论: {}\n{checks}",
+        "账户连接实时探测\n状态: {status}\n结论: {}\n{checks}",
         result.summary
     )
+}
+
+fn format_credential_state(state: AccountCredentialState) -> &'static str {
+    match state {
+        AccountCredentialState::Missing => "缺失",
+        AccountCredentialState::Stored => "已存储",
+    }
 }
 
 fn parse_flags(args: &[String]) -> Result<BTreeMap<String, String>, AppError> {
@@ -298,6 +346,7 @@ fn parse_add_account_input(
         display_name: take_required_flag(flags, "--name")?,
         email: take_required_flag(flags, "--email")?,
         login: take_required_flag(flags, "--login")?,
+        password: take_required_flag(flags, "--password")?,
         imap: MailServerConfig {
             host: take_required_flag(flags, "--imap-host")?,
             port: parse_port(&take_required_flag(flags, "--imap-port")?, "imap.port")?,
@@ -374,13 +423,45 @@ fn default_store_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::run_with_args_and_store_path;
+    use super::run_with_args_and_dependencies;
+    use crate::domain::error::AppError;
+    use crate::infra::account_preflight::LiveAccountConnectionTester;
+    use crate::infra::account_store::JsonFileAccountRepository;
+    use crate::services::account_service::AccountSecretStore;
     use serde_json::Value;
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+    use std::fs;
+    use std::net::TcpListener;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Default)]
+    struct InMemorySecretStore {
+        stored_accounts: RefCell<BTreeSet<String>>,
+    }
+
+    impl AccountSecretStore for InMemorySecretStore {
+        fn save_secret(&self, account_id: &str, _secret: &str) -> Result<(), AppError> {
+            self.stored_accounts
+                .borrow_mut()
+                .insert(account_id.to_string());
+
+            Ok(())
+        }
+
+        fn delete_secret(&self, account_id: &str) -> Result<(), AppError> {
+            self.stored_accounts.borrow_mut().remove(account_id);
+            Ok(())
+        }
+
+        fn has_secret(&self, account_id: &str) -> Result<bool, AppError> {
+            Ok(self.stored_accounts.borrow().contains(account_id))
+        }
+    }
 
     #[test]
     fn defaults_to_text_output_for_workspace_bootstrap() {
-        let output = run_with_args_and_store_path(["workspace", "bootstrap"], unique_store_path())
+        let output = run_with_args_and_test_store(["workspace", "bootstrap"], unique_store_path())
             .expect("命令应执行成功");
 
         assert!(
@@ -392,8 +473,64 @@ mod tests {
     #[test]
     fn persists_account_between_add_and_list() {
         let store_path = unique_store_path();
+        let repository = JsonFileAccountRepository::new(store_path.clone());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
 
-        run_with_args_and_store_path(
+        run_with_args_and_dependencies(
+            [
+                "account",
+                "add",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--password",
+                "app-password",
+                "--imap-host",
+                "imap.example.com",
+                "--imap-port",
+                "993",
+                "--imap-security",
+                "tls",
+                "--smtp-host",
+                "smtp.example.com",
+                "--smtp-port",
+                "587",
+                "--smtp-security",
+                "start_tls",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &secret_store,
+            &tester,
+        )
+        .expect("新增账户应成功");
+
+        let output = run_with_args_and_dependencies(
+            ["account", "list", "--format", "json"],
+            &repository,
+            &secret_store,
+            &tester,
+        )
+        .expect("列出账户应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+        let metadata = fs::read_to_string(&store_path).expect("元数据文件应可读");
+
+        assert_eq!(parsed.as_array().map(|items| items.len()), Some(1));
+        assert_eq!(parsed[0]["credential_state"], "stored");
+        assert!(
+            !metadata.contains("app-password"),
+            "JSON 元数据文件不应包含密码"
+        );
+    }
+
+    #[test]
+    fn rejects_account_add_without_password_flag() {
+        let error = run_with_args_and_test_store(
             [
                 "account",
                 "add",
@@ -415,24 +552,25 @@ mod tests {
                 "587",
                 "--smtp-security",
                 "start_tls",
-                "--format",
-                "json",
             ],
-            store_path.clone(),
+            unique_store_path(),
         )
-        .expect("新增账户应成功");
+        .expect_err("缺少密码参数时必须报错");
 
-        let output =
-            run_with_args_and_store_path(["account", "list", "--format", "json"], store_path)
-                .expect("列出账户应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
-
-        assert_eq!(parsed.as_array().map(|items| items.len()), Some(1));
+        assert_eq!(
+            error,
+            AppError::InvalidCliArgs {
+                message: "缺少参数: --password".to_string(),
+            }
+        );
     }
 
     #[test]
-    fn reports_failed_preflight_for_mismatched_ports() {
-        let output = run_with_args_and_store_path(
+    fn reports_failed_live_probe_for_unreachable_ports() {
+        let unreachable_imap_port = reserve_unused_port();
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
+
+        let output = run_with_args_and_test_store(
             [
                 "account",
                 "test",
@@ -443,31 +581,93 @@ mod tests {
                 "--login",
                 "primary@example.com",
                 "--imap-host",
-                "imap.example.com",
+                "127.0.0.1",
                 "--imap-port",
-                "143",
+                &unreachable_imap_port.to_string(),
                 "--imap-security",
-                "tls",
+                "none",
                 "--smtp-host",
-                "smtp.example.com",
+                "127.0.0.1",
                 "--smtp-port",
-                "587",
+                &smtp
+                    .local_addr()
+                    .expect("应能读取 SMTP 地址")
+                    .port()
+                    .to_string(),
                 "--smtp-security",
-                "start_tls",
+                "none",
                 "--format",
                 "json",
             ],
             unique_store_path(),
         )
-        .expect("连接预检命令应返回结构化结果");
+        .expect("实时探测命令应返回结构化结果");
         let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
 
         assert_eq!(parsed["status"], "failed");
+        assert!(
+            parsed["summary"]
+                .as_str()
+                .is_some_and(|summary| summary.contains("实时探测未通过")),
+            "CLI 应返回实时探测失败语义"
+        );
+    }
+
+    #[test]
+    fn reports_live_probe_success_when_servers_are_reachable() {
+        let imap = TcpListener::bind("127.0.0.1:0").expect("应能绑定 IMAP 测试端口");
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
+
+        let output = run_with_args_and_test_store(
+            [
+                "account",
+                "test",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--imap-host",
+                "127.0.0.1",
+                "--imap-port",
+                &imap
+                    .local_addr()
+                    .expect("应能读取 IMAP 地址")
+                    .port()
+                    .to_string(),
+                "--imap-security",
+                "none",
+                "--smtp-host",
+                "127.0.0.1",
+                "--smtp-port",
+                &smtp
+                    .local_addr()
+                    .expect("应能读取 SMTP 地址")
+                    .port()
+                    .to_string(),
+                "--smtp-security",
+                "none",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("实时探测成功时应返回结构化结果");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+
+        assert_eq!(parsed["status"], "passed");
+        assert!(
+            parsed["summary"]
+                .as_str()
+                .is_some_and(|summary| summary.contains("实时探测通过")),
+            "CLI 应返回实时探测成功语义"
+        );
     }
 
     #[test]
     fn rejects_unsupported_formats() {
-        let error = run_with_args_and_store_path(
+        let error = run_with_args_and_test_store(
             ["workspace", "bootstrap", "--format", "yaml"],
             unique_store_path(),
         )
@@ -490,5 +690,27 @@ mod tests {
         std::env::temp_dir()
             .join("twill-tests")
             .join(format!("cli-accounts-{suffix}.json"))
+    }
+
+    fn reserve_unused_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("应能分配空闲端口");
+        let port = listener.local_addr().expect("应能读取本地地址").port();
+        drop(listener);
+        port
+    }
+
+    fn run_with_args_and_test_store<I, S>(
+        args: I,
+        store_path: std::path::PathBuf,
+    ) -> Result<String, AppError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let repository = JsonFileAccountRepository::new(store_path);
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+
+        run_with_args_and_dependencies(args, &repository, &secret_store, &tester)
     }
 }

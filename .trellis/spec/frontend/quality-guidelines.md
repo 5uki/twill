@@ -30,17 +30,19 @@ Questions to answer:
 
 ## Required Patterns
 
-<!-- Patterns that must always be used -->
+### Desktop Shell Invariants
 
-(To be filled by the team)
+- Tauri desktop builds must keep `base: "./"` in `vite.config.ts`.
+- If `base` falls back to `/`, bundled assets resolve against the filesystem root after a WebView refresh and the app can render a blank screen.
+- Custom overlays inside scrollable desktop surfaces should render through a portal to `document.body`.
+- Do not use browser-native `title` tooltips for extract pills, titlebar controls, or other dense desktop interactions.
 
 ---
 
 ## Testing Requirements
 
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
+- Add a focused Bun test for each non-obvious desktop shell regression.
+- For Tauri shell fixes, prefer assertions on config and helper contracts in addition to normal UI build/test coverage.
 
 ---
 

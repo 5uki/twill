@@ -51,3 +51,9 @@ Keep this managed block so 'trellis update' can refresh the instructions.
 - 多行代码、配置、日志必须使用带语言标识的 Markdown 代码块。
 - 终端内容避免超长表格、超长路径和大段无分隔纯文字。
 - 重点信息用 `**粗体**` 或 `*斜体*`，单行长度尽量控制在终端友好范围内。
+
+## 提交偏好
+
+- 如果用户明确要求“一个任务只保留一个最终提交”，AI 必须优先把 `.trellis/tasks/`、`.trellis/workspace/` 和相关说明文件一起准备到工作区中。
+- 这种情况下，不要默认额外制造独立的 metadata commit 或 session commit。
+- `record-session` 只作为记录流程参考；若用户要单最终提交，应改为手工更新记录文件并并入同一笔最终人工提交。

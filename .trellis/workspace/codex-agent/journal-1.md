@@ -5,7 +5,6 @@
 
 ---
 
-
 ## Session 1: 项目初始化与 UI 规划收敛
 
 **Date**: 2026-03-29
@@ -13,50 +12,15 @@
 
 ### Summary
 
-记录项目首次初始化提交与本轮 planning/UI 规划收敛成果，明确 Twill 的 MVP 产品方向、Fluent UI 工作台基线，以及后续实现可直接使用的 UI 文档入口。
+记录项目首次初始化提交，以及首轮 planning / PRD / UI 规划收敛结果，明确了 Twill 的 MVP 方向、桌面端工作台基线和后续实现入口。
 
 ### Main Changes
 
 - 记录首次初始化提交 `5533f68`
-- 记录本轮 planning / PRD / UI 规划提交 `4118609`
-- 补充 Twill MVP 的 UI 讨论、线框和 PRD UI 摘要
-
-**主要产出**:
-
-| 类别 | 内容 |
-|------|------|
-| 初始化 | 基于 Tauri + React + TypeScript 建立项目基础骨架 |
-| 规划 | 创建并持续完善邮箱客户端 planning 任务与 PRD |
-| 产品方向 | 明确产品聚焦“多邮箱统一验证邮件工作台” |
-| UI 决策 | 选定 Fluent UI React v9 与标准 Fluent 工作台路线 |
-| UI 结构 | 明确三栏结构、`Recent verification` 首页、高密度列表、右侧详情区 |
-| PRD 增补 | 新增 UI 决策记录、线框定义、PRD UI 可执行摘要 |
-
-**关键决策**:
-
-- 首页默认进入 `Recent verification`
-- 左侧采用产品化工作台导航，而不是传统邮箱树
-- 中间采用高密度、动作优先、按最新时间排序的列表
-- 右侧详情提取结果优先，快捷动作固定顶部
-- 已处理项移入次级分组，支持自动与手动并存
-- 顶栏分离 `当前站点` 与 `搜索`
-- 窄窗口下右侧详情退化为 `Drawer`
-- MVP 定义最小键盘快捷键基线
-
-**更新文件**:
-
-- `.trellis/tasks/03-29-brainstorm-mail-client-planning/prd.md`
-- `.trellis/tasks/03-29-brainstorm-mail-client-planning/task.json`
-- `.trellis/tasks/03-29-brainstorm-mail-client-planning/ui-notes.md`
-- `.trellis/tasks/03-29-brainstorm-mail-client-planning/ui-wireframe.md`
-- `.trellis/tasks/03-29-brainstorm-mail-client-planning/prd-ui-summary.md`
-
-**当前状态**:
-
-- 已完成项目初始化提交
-- 已完成 planning 与 UI 基线收敛
-- 当前任务仍处于 planning 阶段，尚未进入实现或归档
-
+- 记录 planning / PRD / UI 基线提交 `4118609`
+- 明确 Twill 聚焦“多邮箱统一处理验证码与验证链接”的桌面工作台定位
+- 选定 `Tauri + React + TypeScript + Rust` 技术栈与 Fluent UI 工作台路线
+- 补充 UI 线框、导航结构、Recent verification 首页与 PRD UI 摘要
 
 ### Git Commits
 
@@ -67,7 +31,7 @@
 
 ### Testing
 
-- 本轮仅涉及 planning / PRD / workspace 文档更新，未运行代码测试。
+- 本轮仅涉及 planning / PRD / workspace 文档更新，未运行代码测试
 
 ### Status
 
@@ -75,12 +39,11 @@
 
 ### Next Steps
 
-- 将 UI 线框与 PRD 摘要继续拆成实现任务与组件结构草案
-- 在实现前补齐前端真实项目规范
-- 后续进入首页工作台的实际实现
+- 将 UI 基线拆成实现任务
+- 在正式开发前补齐项目规范
+- 进入桌面工作台壳层实现
 
 ---
-
 
 ## Session 2: M0 工作台底座落地与 M1 账户接入首切片
 
@@ -93,35 +56,10 @@
 
 ### Main Changes
 
-**阶段一：M0 工程底座（`591879d`）**
-
-- 移除模板 `greet` 与默认素材，建立 `React -> Tauri Command -> Rust Service -> CLI` 的最小共享链路。
-- 新增 `workspace bootstrap` CLI、工作台快照领域模型、静态基础设施与服务层，让桌面端和 CLI 共用同一套核心逻辑。
-- 落下三栏工作台壳层、`Recent verification` 默认视图与多平台 CI，为后续功能迭代提供稳定底座。
-- 建立前后端最小测试入口，完成从模板工程到 Twill 工程骨架的切换。
-
-**阶段二：M1 账户接入首切片（`e5fa7aa`）**
-
-- 新增账户领域模型、账户元数据存储、规则驱动连接预检，以及 `account add / list / test` 的共享后端链路。
-- 新增 `Accounts` 工作台面板、账户表单、账户列表、预检详情与 Tauri 调用封装，让账户 onboarding 真正进入现有工作台。
-- 回补工作台壳层、面板、卡片与状态切换动画，并加入 `prefers-reduced-motion` 降级，补齐 M0 的 UI 动效基线。
-- 明确本轮 `account test` 仅做手动配置连接预检，不引入密码持久化，也不执行真实 IMAP/SMTP 握手。
-
-**关键验证**
-
-- M1 已通过 `cargo test`。
-- M1 已通过 `bun test`。
-- M1 已通过 `bun run build`。
-- M1 已通过 `cargo fmt --check`。
-- M1 已通过 `cargo clippy --all-targets --all-features`。
-- M1 已通过 `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- account test ...` 的 CLI 预检链路验证。
-
-**任务状态**
-
-- 已归档 `03-29-implement-m0-engineering-foundation`。
-- 已归档 `04-04-implement-m1-account-onboarding`。
-- 继续保留 `03-29-brainstorm-mail-client-planning` 作为上层规划任务，承接后续切片设计与拆分。
-
+- 完成 M0 工程底座，打通 `React -> Tauri Command -> Rust Service -> CLI` 最小共用链路
+- 落地 `workspace bootstrap` CLI、工作台快照模型、前后端最小测试入口和多平台 CI
+- 完成 M1 账户 onboarding 首切片，接入 `account add / list / test` 共用链路
+- 引入账户表单、列表、预检详情与工作台基础动效
 
 ### Git Commits
 
@@ -145,5 +83,54 @@
 
 ### Next Steps
 
-- 保持 `03-29-brainstorm-mail-client-planning` 为活跃任务，继续承接后续切片设计。
-- 下一刀优先进入系统级安全存储与真实 IMAP / SMTP 探测能力。
+- 保持 `03-29-brainstorm-mail-client-planning` 为上层规划任务
+- 下一刀进入系统级安全存储与真实连接探测
+
+---
+
+## Session 3: M1 收尾与桌面 UI 深度打磨
+
+**Date**: 2026-04-05
+**Task**: M1 收尾与桌面 UI 深度打磨
+
+### Summary
+
+这轮按单最终提交工作流预写 session 记录。内容覆盖 M1 剩余切片收尾、账户安全存储与实时探测闭环，以及桌面端 UI 的大幅重构和一批 Tauri 壳层 bug 修复。
+
+### Main Changes
+
+- 完成 M1 secure credential storage：系统级凭据存储、状态展示、CLI / Tauri 共用服务链路
+- 完成 M1 live connectivity probe：`account test` 升级为真实 socket 可达性探测
+- 将桌面工作台改成左栏 + 主栏结构，引入顶部验证码提取区与更紧凑的邮件列表
+- 修复自定义标题栏：补齐窗口能力权限、最大化状态同步、拖拽与按钮交互
+- 将 extract 区 tooltip 改成顶层 portal 浮层，移除原生 tooltip，修复闪烁与层级问题
+- 统一验证码头像和进度环几何参数，修复偏移和视觉粗细不一致
+- 调整搜索框、链接色、dismiss 按钮、copied 状态与焦点表现
+- 修复 Tauri WebView 刷新后白屏：在 `vite.config.ts` 固定 `base: "./"`
+- 为 titlebar、tooltip、avatar geometry、desktop refresh 配置补充 Bun 测试
+- 在 frontend quality guidelines 中补记桌面壳层约束，降低后续回归风险
+
+### Key Decisions
+
+- 保持“一个任务只做一个最终人工提交”，所以 `.trellis/` 记录直接写入工作树，不走自动 metadata commit
+- 将 `04-05-implement-m1-live-connectivity-probe` 与 `04-05-implement-m1-secure-credential-storage` 视为本轮已完成子任务并归档
+- 保留 `.codex` 和 `AGENTS.md` 作为 Codex 相关配置，移除其他 AI 配置目录与说明文件
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `pending` | `single final human commit for M1 completion and desktop UI refinement` |
+
+### Testing
+
+- `bun run ci:verify`
+
+### Status
+
+[~] **Prepared For Single Final Commit**
+
+### Next Steps
+
+- 由你创建单条最终提交，包含代码、task、spec 和 journal 记录
+- 后续 M2 可以直接基于本轮归档任务和这份记录继续推进
