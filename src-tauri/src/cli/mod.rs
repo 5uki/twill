@@ -4,13 +4,18 @@ use crate::domain::account::{
     MailServerConfig,
 };
 use crate::domain::error::AppError;
+use crate::domain::workspace::WorkspaceMailboxKind;
 use crate::infra::account_preflight::LiveAccountConnectionTester;
 use crate::infra::account_secret_store::KeyringAccountSecretStore;
 use crate::infra::account_store::JsonFileAccountRepository;
+use crate::infra::workspace_store::JsonFileWorkspaceRepository;
+use crate::infra::workspace_sync_source::SeededWorkspaceSyncSource;
 use crate::services::account_service::{
     self, AccountConnectionTester, AccountRepository, AccountSecretStore,
 };
-use crate::services::workspace_service;
+use crate::services::workspace_service::{
+    self, WorkspaceMessageFilter, WorkspaceSnapshotRepository, WorkspaceSyncSource,
+};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -37,24 +42,37 @@ where
     S: AsRef<str>,
 {
     let repository = JsonFileAccountRepository::new(store_path);
+    let workspace_repository = JsonFileWorkspaceRepository::new(default_workspace_store_path());
     let secret_store = KeyringAccountSecretStore::from_default_service_name();
     let tester = LiveAccountConnectionTester::default();
+    let sync_source = SeededWorkspaceSyncSource;
 
-    run_with_args_and_dependencies(args, &repository, &secret_store, &tester)
+    run_with_args_and_dependencies(
+        args,
+        &repository,
+        &workspace_repository,
+        &secret_store,
+        &tester,
+        &sync_source,
+    )
 }
 
-fn run_with_args_and_dependencies<I, S, R, SecretStore, Tester>(
+fn run_with_args_and_dependencies<I, S, R, WorkspaceRepo, SecretStore, Tester, Source>(
     args: I,
     repository: &R,
+    workspace_repository: &WorkspaceRepo,
     secret_store: &SecretStore,
     tester: &Tester,
+    sync_source: &Source,
 ) -> Result<String, AppError>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
     R: AccountRepository,
+    WorkspaceRepo: WorkspaceSnapshotRepository,
     SecretStore: AccountSecretStore,
     Tester: AccountConnectionTester,
+    Source: WorkspaceSyncSource,
 {
     let args = args
         .into_iter()
@@ -63,12 +81,55 @@ where
 
     match args.as_slice() {
         [workspace, bootstrap] if workspace == "workspace" && bootstrap == "bootstrap" => {
-            render_workspace_bootstrap(OutputFormat::Text)
+            render_workspace_bootstrap(OutputFormat::Text, workspace_repository)
         }
         [workspace, bootstrap, flag, value]
             if workspace == "workspace" && bootstrap == "bootstrap" && flag == "--format" =>
         {
-            render_workspace_bootstrap(parse_output_format(value)?)
+            render_workspace_bootstrap(parse_output_format(value)?, workspace_repository)
+        }
+        [sync, run] if sync == "sync" && run == "run" => {
+            render_sync_run(OutputFormat::Text, repository, workspace_repository, sync_source)
+        }
+        [sync, run, rest @ ..] if sync == "sync" && run == "run" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_sync_run(format, repository, workspace_repository, sync_source)
+        }
+        [mailbox, list] if mailbox == "mailbox" && list == "list" => {
+            render_mailbox_list(OutputFormat::Text, workspace_repository)
+        }
+        [mailbox, list, rest @ ..] if mailbox == "mailbox" && list == "list" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_mailbox_list(format, workspace_repository)
+        }
+        [message, list] if message == "message" && list == "list" => {
+            render_message_list(
+                OutputFormat::Text,
+                workspace_repository,
+                WorkspaceMessageFilter::default(),
+            )
+        }
+        [message, list, rest @ ..] if message == "message" && list == "list" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let filter = parse_message_filter(&mut flags)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_list(format, workspace_repository, filter)
+        }
+        [message, read, rest @ ..] if message == "message" && read == "read" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let message_id = take_required_flag(&mut flags, "--id")?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_read(format, workspace_repository, &message_id)
         }
         [account, list] if account == "account" && list == "list" => {
             render_account_list(OutputFormat::Text, repository, secret_store)
@@ -100,6 +161,11 @@ where
             message: concat!(
                 "用法:\n",
                 "  workspace bootstrap [--format text|json]\n",
+                "  sync run [--format text|json]\n",
+                "  mailbox list [--format text|json]\n",
+                "  message list [--account <account-id>] [--mailbox <inbox|spam_junk>] ",
+                "[--verification-only <true|false>] [--format text|json]\n",
+                "  message read --id <message-id> [--format text|json]\n",
                 "  account list [--format text|json]\n",
                 "  account add --name <name> --email <email> --login <login> --password <password> ",
                 "--imap-host <host> --imap-port <port> --imap-security <none|start_tls|tls> ",
@@ -115,8 +181,14 @@ where
     }
 }
 
-fn render_workspace_bootstrap(format: OutputFormat) -> Result<String, AppError> {
-    let snapshot = workspace_service::load_workspace_bootstrap();
+fn render_workspace_bootstrap<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let snapshot = workspace_service::load_workspace_bootstrap(workspace_repository)?;
 
     match format {
         OutputFormat::Text => {
@@ -149,6 +221,162 @@ fn render_workspace_bootstrap(format: OutputFormat) -> Result<String, AppError> 
                 message: error.to_string(),
             })
         }
+    }
+}
+
+fn render_sync_run<R, W, S>(
+    format: OutputFormat,
+    repository: &R,
+    workspace_repository: &W,
+    sync_source: &S,
+) -> Result<String, AppError>
+where
+    R: AccountRepository,
+    W: WorkspaceSnapshotRepository,
+    S: WorkspaceSyncSource,
+{
+    let snapshot =
+        workspace_service::sync_workspace(repository, workspace_repository, sync_source)?;
+    let message_count = snapshot
+        .message_groups
+        .iter()
+        .flat_map(|group| group.items.iter())
+        .count();
+    let verification_count = snapshot
+        .message_groups
+        .iter()
+        .flat_map(|group| group.items.iter())
+        .filter(|message| message.has_code || message.has_link)
+        .count();
+    let sync_summary = snapshot
+        .sync_status
+        .as_ref()
+        .map(|status| status.summary.as_str())
+        .unwrap_or("收件箱缓存已更新");
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&snapshot).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "收件箱同步已完成\n状态: {sync_summary}\n消息数: {message_count}\n验证消息: {verification_count}\n当前选中: {}",
+            snapshot.selected_message.subject
+        )),
+    }
+}
+
+fn render_mailbox_list<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let mailboxes = workspace_service::list_workspace_mailboxes(workspace_repository)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&mailboxes).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => {
+            if mailboxes.is_empty() {
+                return Ok("当前没有已缓存的邮箱。".to_string());
+            }
+
+            let lines = mailboxes
+                .iter()
+                .map(|mailbox| {
+                    format!(
+                        "- {} | {} | 总计 {} | 未读 {} | 验证 {}",
+                        mailbox.account_name,
+                        mailbox.label,
+                        mailbox.total_count,
+                        mailbox.unread_count,
+                        mailbox.verification_count
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            Ok(format!("已缓存邮箱\n{lines}"))
+        }
+    }
+}
+
+fn render_message_list<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    filter: WorkspaceMessageFilter,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let messages = workspace_service::list_workspace_messages(workspace_repository, &filter)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&messages).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => {
+            if messages.is_empty() {
+                return Ok("当前筛选条件下没有缓存消息。".to_string());
+            }
+
+            let lines = messages
+                .iter()
+                .map(|message| {
+                    format!(
+                        "- {} | {} | {} | {}",
+                        message.account_name,
+                        message.mailbox_label,
+                        message.subject,
+                        message.received_at
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            Ok(format!("已缓存消息\n{lines}"))
+        }
+    }
+}
+
+fn render_message_read<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    message_id: &str,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let message = workspace_service::read_workspace_message(workspace_repository, message_id)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&message).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "缓存消息详情\n主题: {}\n账号: {}\n邮箱: {}\n站点: {}\n摘要: {}\n正文缓存: {}\n同步时间: {}",
+            message.subject,
+            message.account_name,
+            message.mailbox_label,
+            message.site_hint,
+            message.summary,
+            if message.prefetched_body {
+                "已预抓取"
+            } else {
+                "仅元数据"
+            },
+            message.synced_at
+        )),
     }
 }
 
@@ -405,6 +633,48 @@ fn parse_security(value: &str) -> Result<MailSecurity, AppError> {
     }
 }
 
+fn parse_message_filter(
+    flags: &mut BTreeMap<String, String>,
+) -> Result<WorkspaceMessageFilter, AppError> {
+    let account_id = flags.remove("--account");
+    let mailbox_kind = match flags.remove("--mailbox") {
+        Some(value) => Some(parse_mailbox_kind(&value)?),
+        None => None,
+    };
+    let verification_only = match flags.remove("--verification-only") {
+        Some(value) => parse_bool_flag(&value, "--verification-only")?,
+        None => false,
+    };
+
+    Ok(WorkspaceMessageFilter {
+        account_id,
+        mailbox_kind,
+        verification_only,
+    })
+}
+
+fn parse_mailbox_kind(value: &str) -> Result<WorkspaceMailboxKind, AppError> {
+    match value {
+        "inbox" => Ok(WorkspaceMailboxKind::Inbox),
+        "spam_junk" => Ok(WorkspaceMailboxKind::SpamJunk),
+        other => Err(AppError::Validation {
+            field: "mailbox".to_string(),
+            message: format!("不支持的邮箱类型: {other}"),
+        }),
+    }
+}
+
+fn parse_bool_flag(value: &str, field: &str) -> Result<bool, AppError> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => Err(AppError::Validation {
+            field: field.to_string(),
+            message: format!("布尔参数只支持 true/false，收到 {other}"),
+        }),
+    }
+}
+
 fn ensure_no_unknown_flags(flags: &BTreeMap<String, String>) -> Result<(), AppError> {
     if flags.is_empty() {
         Ok(())
@@ -421,12 +691,18 @@ fn default_store_path() -> PathBuf {
     crate::infra::account_store::default_account_store_path()
 }
 
+fn default_workspace_store_path() -> PathBuf {
+    crate::infra::workspace_store::default_workspace_store_path()
+}
+
 #[cfg(test)]
 mod tests {
     use super::run_with_args_and_dependencies;
     use crate::domain::error::AppError;
     use crate::infra::account_preflight::LiveAccountConnectionTester;
     use crate::infra::account_store::JsonFileAccountRepository;
+    use crate::infra::workspace_store::JsonFileWorkspaceRepository;
+    use crate::infra::workspace_sync_source::SeededWorkspaceSyncSource;
     use crate::services::account_service::AccountSecretStore;
     use serde_json::Value;
     use std::cell::RefCell;
@@ -474,8 +750,11 @@ mod tests {
     fn persists_account_between_add_and_list() {
         let store_path = unique_store_path();
         let repository = JsonFileAccountRepository::new(store_path.clone());
+        let workspace_path = unique_workspace_store_path();
+        let workspace_repository = JsonFileWorkspaceRepository::new(workspace_path);
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
 
         run_with_args_and_dependencies(
             [
@@ -505,16 +784,20 @@ mod tests {
                 "json",
             ],
             &repository,
+            &workspace_repository,
             &secret_store,
             &tester,
+            &sync_source,
         )
         .expect("新增账户应成功");
 
         let output = run_with_args_and_dependencies(
             ["account", "list", "--format", "json"],
             &repository,
+            &workspace_repository,
             &secret_store,
             &tester,
+            &sync_source,
         )
         .expect("列出账户应成功");
         let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
@@ -666,6 +949,106 @@ mod tests {
     }
 
     #[test]
+    fn rejects_sync_run_when_no_accounts_exist() {
+        let error = run_with_args_and_test_workspace(
+            ["sync", "run"],
+            unique_store_path(),
+            unique_workspace_store_path(),
+        )
+        .expect_err("没有账户时同步必须报错");
+
+        assert_eq!(
+            error,
+            AppError::Validation {
+                field: "accounts".to_string(),
+                message: "请先添加至少一个账户后再同步收件箱".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn sync_run_persists_snapshot_for_workspace_bootstrap() {
+        let account_store_path = unique_store_path();
+        let workspace_store_path = unique_workspace_store_path();
+        let repository = JsonFileAccountRepository::new(account_store_path.clone());
+        let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+
+        run_with_args_and_dependencies(
+            [
+                "account",
+                "add",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--password",
+                "app-password",
+                "--imap-host",
+                "imap.example.com",
+                "--imap-port",
+                "993",
+                "--imap-security",
+                "tls",
+                "--smtp-host",
+                "smtp.example.com",
+                "--smtp-port",
+                "587",
+                "--smtp-security",
+                "start_tls",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("新增账户应成功");
+
+        let synced_output = run_with_args_and_dependencies(
+            ["sync", "run", "--format", "json"],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("同步命令应成功");
+        let synced = serde_json::from_str::<Value>(&synced_output).expect("输出必须是合法 JSON");
+
+        assert_eq!(synced["navigation"][3]["badge"], 1);
+        assert_eq!(
+            synced["message_groups"][0]["items"][1]["account_name"],
+            "Primary Gmail"
+        );
+
+        let bootstrap_output = run_with_args_and_dependencies(
+            ["workspace", "bootstrap", "--format", "json"],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("读取工作台快照应成功");
+        let bootstrap =
+            serde_json::from_str::<Value>(&bootstrap_output).expect("输出必须是合法 JSON");
+
+        assert_eq!(
+            bootstrap["message_groups"][0]["items"][1]["account_name"],
+            "Primary Gmail"
+        );
+        assert!(
+            workspace_store_path.exists(),
+            "同步完成后必须把快照持久化到本地缓存"
+        );
+    }
+
+    #[test]
     fn rejects_unsupported_formats() {
         let error = run_with_args_and_test_store(
             ["workspace", "bootstrap", "--format", "yaml"],
@@ -681,6 +1064,129 @@ mod tests {
         );
     }
 
+    #[test]
+    fn mailbox_list_reads_seed_snapshot_when_workspace_cache_is_empty() {
+        let output = run_with_args_and_test_store(
+            ["mailbox", "list", "--format", "json"],
+            unique_store_path(),
+        )
+        .expect("读取邮箱列表应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+        let mailboxes = parsed.as_array().expect("邮箱列表输出应该是 JSON 数组");
+
+        assert_eq!(mailboxes.len(), 3);
+        assert!(mailboxes.iter().any(|mailbox| {
+            mailbox["account_id"] == "seed_primary-gmail" && mailbox["label"] == "Inbox"
+        }));
+        assert!(
+            mailboxes
+                .iter()
+                .any(|mailbox| mailbox["kind"] == "spam_junk")
+        );
+    }
+
+    #[test]
+    fn message_list_filters_synced_cache_by_account_and_mailbox() {
+        let repository = JsonFileAccountRepository::new(unique_store_path());
+        let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+
+        run_with_args_and_dependencies(
+            [
+                "account",
+                "add",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--password",
+                "app-password",
+                "--imap-host",
+                "imap.example.com",
+                "--imap-port",
+                "993",
+                "--imap-security",
+                "tls",
+                "--smtp-host",
+                "smtp.example.com",
+                "--smtp-port",
+                "587",
+                "--smtp-security",
+                "start_tls",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("新增账号应成功");
+
+        run_with_args_and_dependencies(
+            ["sync", "run", "--format", "json"],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("同步命令应成功");
+
+        let output = run_with_args_and_dependencies(
+            [
+                "message",
+                "list",
+                "--account",
+                "acct_primary-example-com",
+                "--mailbox",
+                "spam_junk",
+                "--verification-only",
+                "true",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("按账号与邮箱筛选消息应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+        let messages = parsed.as_array().expect("消息列表输出应该是 JSON 数组");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], "msg_notion_welcome");
+        assert_eq!(messages[0]["mailbox_label"], "Spam/Junk");
+        assert_eq!(messages[0]["account_id"], "acct_primary-example-com");
+    }
+
+    #[test]
+    fn message_read_returns_prefetched_detail_from_seed_snapshot() {
+        let output = run_with_args_and_test_store(
+            [
+                "message",
+                "read",
+                "--id",
+                "msg_linear_verify",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("读取缓存消息详情应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+
+        assert_eq!(parsed["id"], "msg_linear_verify");
+        assert_eq!(parsed["site_hint"], "linear.app");
+        assert_eq!(parsed["verification_link"], "https://linear.app/login");
+        assert_eq!(parsed["prefetched_body"], true);
+    }
+
     fn unique_store_path() -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -690,6 +1196,17 @@ mod tests {
         std::env::temp_dir()
             .join("twill-tests")
             .join(format!("cli-accounts-{suffix}.json"))
+    }
+
+    fn unique_workspace_store_path() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("系统时间应晚于 epoch")
+            .as_nanos();
+
+        std::env::temp_dir()
+            .join("twill-tests")
+            .join(format!("cli-workspace-{suffix}.json"))
     }
 
     fn reserve_unused_port() -> u16 {
@@ -708,9 +1225,43 @@ mod tests {
         S: AsRef<str>,
     {
         let repository = JsonFileAccountRepository::new(store_path);
+        let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
 
-        run_with_args_and_dependencies(args, &repository, &secret_store, &tester)
+        run_with_args_and_dependencies(
+            args,
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+    }
+
+    fn run_with_args_and_test_workspace<I, S>(
+        args: I,
+        store_path: std::path::PathBuf,
+        workspace_store_path: std::path::PathBuf,
+    ) -> Result<String, AppError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let repository = JsonFileAccountRepository::new(store_path);
+        let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path);
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+
+        run_with_args_and_dependencies(
+            args,
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
     }
 }

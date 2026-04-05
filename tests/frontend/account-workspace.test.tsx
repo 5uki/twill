@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AccountsWorkspace } from "../../src/components/AccountsWorkspace";
 import { MailWorkspace } from "../../src/components/MailWorkspace";
+import { TopHeader } from "../../src/components/TopHeader";
 import {
   buildAccountCommandInput,
   createEmptyAccountFormDraft,
@@ -140,5 +141,30 @@ describe("mail row layout", () => {
     expect(css.includes(".mail-item-date")).toBe(true);
     expect(css.includes("white-space: nowrap")).toBe(true);
     expect(css.includes("align-items: center")).toBe(true);
+  });
+});
+
+describe("sync header", () => {
+  test("shows user-facing sync summary and action", () => {
+    const markup = renderToStaticMarkup(
+      <TopHeader
+        canSync
+        isSyncing={false}
+        syncSummary="已同步 1 个账号，共 3 封邮件"
+        onSync={() => {}}
+      />,
+    );
+
+    expect(markup.includes("已同步 1 个账号，共 3 封邮件")).toBe(true);
+    expect(markup.includes("立即同步")).toBe(true);
+    expect(markup.includes("generated_at")).toBe(false);
+  });
+
+  test("shows syncing state while refresh is running", () => {
+    const markup = renderToStaticMarkup(
+      <TopHeader canSync isSyncing syncSummary="正在刷新最近邮件" onSync={() => {}} />,
+    );
+
+    expect(markup.includes("同步中")).toBe(true);
   });
 });

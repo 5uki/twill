@@ -150,6 +150,7 @@ pub(crate) fn default_secret_service_name() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{KeyringAccountSecretStore, default_secret_service_name, keyring_secret_key};
+    use crate::domain::error::AppError;
     use crate::services::account_service::AccountSecretStore;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -163,6 +164,20 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_linux_secret_service_unavailable_errors() {
+        let error = AppError::Storage {
+            message: "删除系统安全存储失败: Platform secure storage failure: DBus error: The name org.freedesktop.secrets was not provided by any .service files".to_string(),
+        };
+
+        assert!(should_skip_platform_secret_store_test(&error));
+        assert!(!should_skip_platform_secret_store_test(
+            &AppError::Storage {
+                message: "删除系统安全存储失败: unknown".to_string(),
+            }
+        ));
+    }
+
+    #[test]
     fn saves_checks_and_deletes_secret_in_system_store() {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -172,34 +187,70 @@ mod tests {
         let account_id = format!("acct_test_{suffix}");
         let store = KeyringAccountSecretStore::new(service_name);
 
-        store
-            .delete_secret(&account_id)
-            .expect("测试前清理系统凭据应成功");
+        if let Err(error) = store.delete_secret(&account_id) {
+            skip_or_panic("测试前清理系统凭据应成功", error);
+            return;
+        }
         assert!(
-            !store
-                .has_secret(&account_id)
-                .expect("读取初始凭据状态应成功"),
+            !match store.has_secret(&account_id) {
+                Ok(value) => value,
+                Err(error) => {
+                    skip_or_panic("读取初始凭据状态应成功", error);
+                    return;
+                }
+            },
             "新建测试条目默认不应存在凭据"
         );
 
-        store
-            .save_secret(&account_id, "app-password")
-            .expect("写入系统安全存储应成功");
+        if let Err(error) = store.save_secret(&account_id, "app-password") {
+            skip_or_panic("写入系统安全存储应成功", error);
+            return;
+        }
         assert!(
-            store
-                .has_secret(&account_id)
-                .expect("写入后读取凭据状态应成功"),
+            match store.has_secret(&account_id) {
+                Ok(value) => value,
+                Err(error) => {
+                    skip_or_panic("写入后读取凭据状态应成功", error);
+                    return;
+                }
+            },
             "写入后应能看到已存储状态"
         );
 
-        store
-            .delete_secret(&account_id)
-            .expect("删除测试系统凭据应成功");
+        if let Err(error) = store.delete_secret(&account_id) {
+            skip_or_panic("删除测试系统凭据应成功", error);
+            return;
+        }
         assert!(
-            !store
-                .has_secret(&account_id)
-                .expect("删除后读取凭据状态应成功"),
+            !match store.has_secret(&account_id) {
+                Ok(value) => value,
+                Err(error) => {
+                    skip_or_panic("删除后读取凭据状态应成功", error);
+                    return;
+                }
+            },
             "删除后凭据状态应恢复为缺失"
         );
+    }
+
+    fn skip_or_panic(context: &str, error: AppError) {
+        if should_skip_platform_secret_store_test(&error) {
+            eprintln!("{context}，但当前环境未提供系统安全存储后端，跳过集成测试: {error}");
+            return;
+        }
+
+        panic!("{context}: {error:?}");
+    }
+
+    fn should_skip_platform_secret_store_test(error: &AppError) -> bool {
+        let AppError::Storage { message } = error else {
+            return false;
+        };
+        let normalized = message.to_ascii_lowercase();
+
+        normalized.contains("platform secure storage failure")
+            && (normalized.contains("dbus error")
+                || normalized.contains("org.freedesktop.secrets")
+                || normalized.contains("service files"))
     }
 }

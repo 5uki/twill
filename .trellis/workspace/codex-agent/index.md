@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 6
 - **Last Active**: 2026-04-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | 81 | Active |
+| `journal-1.md` | 171 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 6 | 2026-04-05 | M2 查询缓存收尾与共享种子合同闭环 | `pending final commit` |
+| 5 | 2026-04-05 | Linux CI 兼容修正与 M2 同步状态反馈 | `pending final commit` |
+| 4 | 2026-04-05 | M2 同步缓存底座与工作台读路径切换 | `pending final commit` |
 | 3 | 2026-04-05 | M1 收尾、合同修正与桌面 UI 精修 | `pending final commit` |
 | 2 | 2026-04-05 | M0 工作台底座与 M1 账号接入首切片 | `591879d`, `e5fa7aa` |
 | 1 | 2026-03-29 | 项目初始化与 UI 规划沉淀 | `5533f68`, `4118609` |

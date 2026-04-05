@@ -31,6 +31,55 @@ pub enum WorkspaceExtractKind {
     Link,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceMailboxKind {
+    Inbox,
+    SpamJunk,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceSyncState {
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceSyncPhase {
+    First,
+    Incremental,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceSyncStatus {
+    pub state: WorkspaceSyncState,
+    pub summary: String,
+    #[serde(default)]
+    pub phase: Option<WorkspaceSyncPhase>,
+    #[serde(default)]
+    pub poll_interval_minutes: Option<u32>,
+    #[serde(default)]
+    pub retention_days: Option<u32>,
+    #[serde(default)]
+    pub next_poll_at: Option<String>,
+    #[serde(default)]
+    pub folders: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceMailboxSummary {
+    pub id: String,
+    #[serde(default)]
+    pub account_id: String,
+    pub account_name: String,
+    pub label: String,
+    pub kind: WorkspaceMailboxKind,
+    pub total_count: u32,
+    pub unread_count: u32,
+    pub verification_count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NavigationItem {
     pub id: WorkspaceViewId,
@@ -41,15 +90,25 @@ pub struct NavigationItem {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceMessageItem {
     pub id: String,
+    #[serde(default)]
+    pub account_id: String,
     pub subject: String,
     pub sender: String,
     pub account_name: String,
+    #[serde(default)]
+    pub mailbox_id: String,
+    #[serde(default)]
+    pub mailbox_label: String,
     pub received_at: String,
     pub category: MessageCategory,
     pub status: MessageStatus,
     pub has_code: bool,
     pub has_link: bool,
     pub preview: String,
+    #[serde(default)]
+    pub prefetched_body: bool,
+    #[serde(default)]
+    pub synced_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,9 +121,15 @@ pub struct WorkspaceMessageGroup {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceMessageDetail {
     pub id: String,
+    #[serde(default)]
+    pub account_id: String,
     pub subject: String,
     pub sender: String,
     pub account_name: String,
+    #[serde(default)]
+    pub mailbox_id: String,
+    #[serde(default)]
+    pub mailbox_label: String,
     pub received_at: String,
     pub category: MessageCategory,
     pub status: MessageStatus,
@@ -72,6 +137,12 @@ pub struct WorkspaceMessageDetail {
     pub summary: String,
     pub extracted_code: Option<String>,
     pub verification_link: Option<String>,
+    #[serde(default)]
+    pub body_text: Option<String>,
+    #[serde(default)]
+    pub prefetched_body: bool,
+    #[serde(default)]
+    pub synced_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,10 +171,16 @@ pub struct WorkspaceBootstrapSnapshot {
     pub generated_at: String,
     pub default_view: WorkspaceViewId,
     pub navigation: Vec<NavigationItem>,
+    #[serde(default)]
+    pub mailboxes: Vec<WorkspaceMailboxSummary>,
     pub message_groups: Vec<WorkspaceMessageGroup>,
     pub selected_message: WorkspaceMessageDetail,
+    #[serde(default)]
+    pub message_details: Vec<WorkspaceMessageDetail>,
     #[serde(default)]
     pub extracts: Vec<WorkspaceExtractItem>,
     #[serde(default)]
     pub site_summaries: Vec<WorkspaceSiteSummary>,
+    #[serde(default)]
+    pub sync_status: Option<WorkspaceSyncStatus>,
 }

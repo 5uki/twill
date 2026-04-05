@@ -29,6 +29,7 @@ import {
   listAccounts,
   loadWorkspaceBootstrap,
   openExternalUrl,
+  syncWorkspace,
   testAccountConnection,
 } from "./lib/app-api";
 import type {
@@ -73,26 +74,55 @@ function App() {
     useState<AccountConnectionTestResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+
+  const resolveWorkspaceSnapshot = async (nextAccounts: AccountSummary[]) => {
+    if (nextAccounts.length === 0) {
+      return {
+        snapshot: await loadWorkspaceBootstrap(),
+        errorMessage: null,
+      };
+    }
+
+    try {
+      return {
+        snapshot: await syncWorkspace(),
+        errorMessage: null,
+      };
+    } catch {
+      return {
+        snapshot: await loadWorkspaceBootstrap(),
+        errorMessage: "暂时无法刷新收件箱，已显示当前快照。",
+      };
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      const [nextWorkspaceSnapshot, nextAccounts] = await Promise.all([
-        loadWorkspaceBootstrap(),
-        listAccounts(),
-      ]);
+      const nextAccounts = await listAccounts();
+
+      if (!cancelled) {
+        setIsSyncing(nextAccounts.length > 0);
+      }
+
+      const workspaceResult = await resolveWorkspaceSnapshot(nextAccounts);
 
       if (cancelled) {
         return;
       }
 
+      setIsSyncing(false);
+
       startTransition(() => {
-        setWorkspaceSnapshot(nextWorkspaceSnapshot);
+        setWorkspaceSnapshot(workspaceResult.snapshot);
         setActiveCategory(
-          mapWorkspaceViewToCategory(nextWorkspaceSnapshot.default_view),
+          mapWorkspaceViewToCategory(workspaceResult.snapshot.default_view),
         );
         setAccounts(nextAccounts);
+        setSyncErrorMessage(workspaceResult.errorMessage);
       });
     };
 
@@ -147,16 +177,21 @@ function App() {
       setIsSaving(true);
       await addAccount(buildAccountCommandInput(accountDraft));
       const nextAccounts = await listAccounts();
+      setIsSyncing(nextAccounts.length > 0);
+      const workspaceResult = await resolveWorkspaceSnapshot(nextAccounts);
 
       startTransition(() => {
         setAccounts(nextAccounts);
+        setWorkspaceSnapshot(workspaceResult.snapshot);
         setAccountDraft(createEmptyAccountFormDraft());
         setProbeResult(null);
+        setSyncErrorMessage(workspaceResult.errorMessage);
       });
     } catch (error) {
       setAccountError(getErrorMessage(error));
     } finally {
       setIsSaving(false);
+      setIsSyncing(false);
     }
   };
 
@@ -179,6 +214,28 @@ function App() {
     }
   };
 
+  const handleSyncWorkspace = async () => {
+    try {
+      setSyncErrorMessage(null);
+      setIsSyncing(true);
+      const nextAccounts = await listAccounts();
+      const workspaceResult = await resolveWorkspaceSnapshot(nextAccounts);
+
+      startTransition(() => {
+        setAccounts(nextAccounts);
+        setWorkspaceSnapshot(workspaceResult.snapshot);
+        setSyncErrorMessage(workspaceResult.errorMessage);
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const syncSummary =
+    syncErrorMessage ??
+    workspaceSnapshot.sync_status?.summary ??
+    (runtimeAvailable ? "添加账号后可同步最近邮件" : "桌面端可同步最新收件箱");
+
   return (
     <FluentProvider theme={twillTheme}>
       <div
@@ -197,7 +254,15 @@ function App() {
             onCategoryChange={setActiveCategory}
           />
           <div className="main-workspace">
-            <TopHeader />
+            <TopHeader
+              canSync={runtimeAvailable && accounts.length > 0}
+              hasSyncError={syncErrorMessage !== null}
+              isSyncing={isSyncing}
+              syncSummary={syncSummary}
+              onSync={() => {
+                void handleSyncWorkspace();
+              }}
+            />
             <MailWorkspace
               accountsView={
                 <AccountsWorkspace

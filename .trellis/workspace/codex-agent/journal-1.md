@@ -134,3 +134,129 @@
 
 - 由你创建单条最终提交，包含代码、spec 和 `.trellis/workspace` 记录
 - 后续 M2 优先把工作台从共享快照替换为真实 IMAP 收件箱同步
+
+---
+
+## Session 4: M2 同步缓存底座与工作台读路径切换
+
+**Date**: 2026-04-05
+**Task**: M2 同步缓存底座与工作台读路径切换
+
+### Summary
+
+确认 M1 已完成后，继续启动 M2 第一切片。这轮先不冒进承诺“真实 IMAP 已经打通”，而是把同步缓存骨架、CLI / Tauri 同步入口和工作台缓存读路径正式接上，为下一轮真实 IMAP 拉取铺底。
+
+### Main Changes
+
+- 新增工作台缓存仓库 `workspace_store`，默认落到平台持久化目录，并复用文件锁与原子写语义
+- 新增 `SeededWorkspaceSyncSource`，基于共享种子快照按当前账户生成已同步缓存快照
+- `workspace_service` 改为优先读取缓存；缓存缺失时退回共享种子
+- 新增 `sync run` CLI 和 `sync_workspace` Tauri Command，CLI / Tauri / 服务层共用同一套同步主链路
+- 为同步链路补齐 Rust 服务层、缓存仓库、同步源和 CLI 自动化测试
+- 桌面端前端在加载和新增账户成功后主动请求同步快照，避免继续只读旧的静态种子
+- 更新后端跨层合同，明确当前 M2 已接管缓存与读路径，但真实 IMAP 拉取仍未完成
+
+### Key Decisions
+
+- 当前 M2 只交付“同步缓存底座 + 读路径切换”，不把 seeded snapshot 冒充为真实 IMAP 收件箱结果
+- 浏览器预览继续允许退回共享种子；桌面端优先走同步缓存
+- `sync run` 在没有账户时明确报错，避免制造“同步成功但没有任何来源”的假象
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `pending` | `feat(sync): add M2 workspace cache foundation and sync command` |
+
+### Testing
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `bun test`
+- `bun run build`
+
+### Status
+
+[~] **Prepared For Review And Commit**
+
+### Next Steps
+
+- 下一轮把 `SeededWorkspaceSyncSource` 替换为真实 IMAP 拉取适配器
+- 继续补 `sync run` 的首次同步 / 增量同步 / 手动刷新语义
+- 在缓存层继续引入真正的消息元数据与索引字段
+
+---
+
+## Session 5: Linux CI 兼容修正与 M2 同步状态反馈
+
+**Date**: 2026-04-05
+**Task**: Linux CI 兼容修正与 M2 同步状态反馈
+
+### Summary
+
+先修掉 Linux runner 上缺失 `org.freedesktop.secrets` 时的系统安全存储测试脆弱性，然后继续推进 M2，把同步状态从“只有后台命令可用”推进到“顶部栏可见、可手动触发”的用户可感知状态。
+
+### Main Changes
+
+- 调整 `account_secret_store` 集成测试：当 Linux 环境缺少 Secret Service / DBus 后端时显式跳过，不再把环境缺陷误判为仓库失败
+- 补充系统安全存储测试的错误识别用例，确保只跳过“平台后端不可用”而不是吞掉其他真实错误
+- 为工作台快照新增 `sync_status` 合同，seeded sync source 会写入“已同步 X 个账号，共 Y 封邮件”摘要
+- 顶部栏新增同步状态展示与“立即同步”按钮，加载、保存账号后和手动点击都会复用同一条同步逻辑
+- 同步失败时前端回退到当前快照，并给出用户视角错误提示，不暴露实现细节
+- 补充顶部同步栏的前端回归测试
+
+### Testing
+
+- `bun test`
+- `bun run build`
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+
+### Status
+
+[~] **Prepared For Review And Commit**
+
+### Notes
+
+- 本地沙箱里执行 `bun run ci:verify` 会在 Vite/esbuild 子进程处遇到 `spawn EPERM`，属于当前执行环境限制；单独 `bun run build` 已通过
+- 本地沙箱里直接执行 `twill-cli workspace bootstrap` 会因默认缓存目录写锁权限受限失败；GitHub Linux runner 的失败根因仍是 Secret Service 集成测试，已修复
+
+---
+
+## Session 6: M2 查询缓存收尾与共享种子合同闭环
+
+**Date**: 2026-04-05
+**Task**: M2 查询缓存收尾与共享种子合同闭环
+
+### Summary
+
+继续把 M2 剩余的“缓存可查询”部分做完，避免工作台已经切到本地缓存，但 CLI 仍然只能同步不能查、共享种子也还停留在旧合同。这个收尾让 mailbox/message 查询入口、种子快照字段和服务层边界彻底对齐。
+
+### Main Changes
+
+- 为 `WorkspaceMailboxKind` 补齐可排序特征，修复缓存邮箱汇总在 `BTreeMap` 聚合时的编译缺口
+- 调整 `workspace_service::sync_workspace` 对旧快照的读取策略：仅对 `Storage` 错误回退为空快照，避免把缓存结构损坏等非存储错误静默吞掉
+- 把共享种子 [workspace-bootstrap.json](../../../src/data/workspace-bootstrap.json) 升级到新合同，补齐 `mailboxes`、`message_details`、`account_id`、`mailbox_id`、`prefetched_body` 和 `sync_status`
+- 完成 `mailbox list`、`message list`、`message read` 的 CLI 自动化测试，覆盖静态种子回退、已同步缓存筛选和消息详情读取
+- 重写 [account-workspace-contracts.md](../../../.trellis/spec/backend/account-workspace-contracts.md) 的工作台合同部分，明确缓存查询入口、错误矩阵和测试要求
+- 更新 M2 任务 PRD 与 task 状态，明确当前子任务已完成，真实 IMAP 拉取仍属于下一轮
+
+### Testing
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `bun test`
+- `bun run build`
+
+### Status
+
+[~] **Prepared For Review And Commit**
+
+### Notes
+
+- 这轮完成后，M2 当前定义下的 seeded cache / cache read path / sync status / mailbox-message CLI 查询都已闭环
+- `bun run ci:verify` 在本地沙箱里仍可能被 `spawn EPERM` 卡住；已分别验证 `bun test`、`bun run build`、`cargo test`、`cargo fmt --check`、`cargo clippy`

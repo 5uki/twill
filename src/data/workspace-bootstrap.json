@@ -24,6 +24,38 @@
       "badge": 3
     }
   ],
+  "mailboxes": [
+    {
+      "id": "seed_primary-gmail/inbox",
+      "account_id": "seed_primary-gmail",
+      "account_name": "Primary Gmail",
+      "label": "Inbox",
+      "kind": "inbox",
+      "total_count": 1,
+      "unread_count": 1,
+      "verification_count": 1
+    },
+    {
+      "id": "seed_work-outlook/inbox",
+      "account_id": "seed_work-outlook",
+      "account_name": "Work Outlook",
+      "label": "Inbox",
+      "kind": "inbox",
+      "total_count": 1,
+      "unread_count": 1,
+      "verification_count": 1
+    },
+    {
+      "id": "seed_primary-gmail/spam-junk",
+      "account_id": "seed_primary-gmail",
+      "account_name": "Primary Gmail",
+      "label": "Spam/Junk",
+      "kind": "spam_junk",
+      "total_count": 1,
+      "unread_count": 0,
+      "verification_count": 1
+    }
+  ],
   "message_groups": [
     {
       "id": "pending",
@@ -31,27 +63,37 @@
       "items": [
         {
           "id": "msg_github_security",
+          "account_id": "seed_primary-gmail",
           "subject": "GitHub 安全验证码",
           "sender": "noreply@github.com",
           "account_name": "Primary Gmail",
+          "mailbox_id": "seed_primary-gmail/inbox",
+          "mailbox_label": "Inbox",
           "received_at": "2026-03-29T08:58:00Z",
           "category": "security",
           "status": "pending",
           "has_code": true,
           "has_link": false,
-          "preview": "你的 GitHub 登录验证码是 362149。"
+          "preview": "你的 GitHub 登录验证码是 362149。",
+          "prefetched_body": true,
+          "synced_at": "2026-03-29T09:00:00Z"
         },
         {
           "id": "msg_linear_verify",
+          "account_id": "seed_work-outlook",
           "subject": "Linear 验证链接",
           "sender": "hello@linear.app",
           "account_name": "Work Outlook",
+          "mailbox_id": "seed_work-outlook/inbox",
+          "mailbox_label": "Inbox",
           "received_at": "2026-03-29T08:41:00Z",
           "category": "registration",
           "status": "pending",
           "has_code": false,
           "has_link": true,
-          "preview": "点击邮件中的安全链接完成登录。"
+          "preview": "点击邮件中的安全链接完成登录。",
+          "prefetched_body": true,
+          "synced_at": "2026-03-29T09:00:00Z"
         }
       ]
     },
@@ -61,32 +103,102 @@
       "items": [
         {
           "id": "msg_notion_welcome",
+          "account_id": "seed_primary-gmail",
           "subject": "Notion 注册确认",
           "sender": "team@makenotion.com",
           "account_name": "Primary Gmail",
+          "mailbox_id": "seed_primary-gmail/spam-junk",
+          "mailbox_label": "Spam/Junk",
           "received_at": "2026-03-29T07:12:00Z",
           "category": "marketing",
           "status": "processed",
           "has_code": false,
           "has_link": true,
-          "preview": "已完成注册，可继续打开欢迎链接。"
+          "preview": "已完成注册，可继续打开欢迎链接。",
+          "prefetched_body": true,
+          "synced_at": "2026-03-29T09:00:00Z"
         }
       ]
     }
   ],
   "selected_message": {
     "id": "msg_github_security",
+    "account_id": "seed_primary-gmail",
     "subject": "GitHub 安全验证码",
     "sender": "noreply@github.com",
     "account_name": "Primary Gmail",
+    "mailbox_id": "seed_primary-gmail/inbox",
+    "mailbox_label": "Inbox",
     "received_at": "2026-03-29T08:58:00Z",
     "category": "security",
     "status": "pending",
     "site_hint": "github.com",
-    "summary": "这是本轮 M0 的静态样例数据，用于驱动 Recent verification 工作台壳层。",
+    "summary": "这是工作台静态预览快照，用于浏览器预览和桌面端缓存回退。",
     "extracted_code": "362149",
-    "verification_link": "https://github.com/login/device"
+    "verification_link": "https://github.com/login/device",
+    "body_text": "GitHub 安全验证码\n\n这是工作台静态预览快照，用于浏览器预览和桌面端缓存回退。",
+    "prefetched_body": true,
+    "synced_at": "2026-03-29T09:00:00Z"
   },
+  "message_details": [
+    {
+      "id": "msg_github_security",
+      "account_id": "seed_primary-gmail",
+      "subject": "GitHub 安全验证码",
+      "sender": "noreply@github.com",
+      "account_name": "Primary Gmail",
+      "mailbox_id": "seed_primary-gmail/inbox",
+      "mailbox_label": "Inbox",
+      "received_at": "2026-03-29T08:58:00Z",
+      "category": "security",
+      "status": "pending",
+      "site_hint": "github.com",
+      "summary": "你的 GitHub 登录验证码是 362149。",
+      "extracted_code": "362149",
+      "verification_link": "https://github.com/login/device",
+      "body_text": "GitHub 安全验证码\n\n你的 GitHub 登录验证码是 362149。",
+      "prefetched_body": true,
+      "synced_at": "2026-03-29T09:00:00Z"
+    },
+    {
+      "id": "msg_linear_verify",
+      "account_id": "seed_work-outlook",
+      "subject": "Linear 验证链接",
+      "sender": "hello@linear.app",
+      "account_name": "Work Outlook",
+      "mailbox_id": "seed_work-outlook/inbox",
+      "mailbox_label": "Inbox",
+      "received_at": "2026-03-29T08:41:00Z",
+      "category": "registration",
+      "status": "pending",
+      "site_hint": "linear.app",
+      "summary": "点击邮件中的安全链接完成登录。",
+      "extracted_code": null,
+      "verification_link": "https://linear.app/login",
+      "body_text": "Linear 验证链接\n\n点击邮件中的安全链接完成登录。",
+      "prefetched_body": true,
+      "synced_at": "2026-03-29T09:00:00Z"
+    },
+    {
+      "id": "msg_notion_welcome",
+      "account_id": "seed_primary-gmail",
+      "subject": "Notion 注册确认",
+      "sender": "team@makenotion.com",
+      "account_name": "Primary Gmail",
+      "mailbox_id": "seed_primary-gmail/spam-junk",
+      "mailbox_label": "Spam/Junk",
+      "received_at": "2026-03-29T07:12:00Z",
+      "category": "marketing",
+      "status": "processed",
+      "site_hint": "notion.so",
+      "summary": "已完成注册，可继续打开欢迎链接。",
+      "extracted_code": null,
+      "verification_link": "https://www.notion.so",
+      "body_text": "Notion 注册确认\n\n已完成注册，可继续打开欢迎链接。",
+      "prefetched_body": true,
+      "synced_at": "2026-03-29T09:00:00Z"
+    }
+  ],
   "extracts": [
     {
       "id": "extract_github_code",
@@ -138,5 +250,14 @@
       "pending_count": 0,
       "latest_sender": "team@makenotion.com"
     }
-  ]
+  ],
+  "sync_status": {
+    "state": "ready",
+    "summary": "预览快照已加载，添加账号后可同步最新收件箱",
+    "phase": null,
+    "poll_interval_minutes": null,
+    "retention_days": null,
+    "next_poll_at": null,
+    "folders": ["Inbox", "Spam/Junk"]
+  }
 }

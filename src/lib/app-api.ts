@@ -28,6 +28,14 @@ export async function loadWorkspaceBootstrap(): Promise<WorkspaceBootstrapSnapsh
   }
 }
 
+export async function syncWorkspace(): Promise<WorkspaceBootstrapSnapshot> {
+  if (!hasDesktopRuntime()) {
+    return fallbackWorkspaceBootstrap;
+  }
+
+  return invoke<WorkspaceBootstrapSnapshot>("sync_workspace");
+}
+
 export async function listAccounts(): Promise<AccountSummary[]> {
   if (!hasDesktopRuntime()) {
     return [];

@@ -10,6 +10,9 @@ export type WorkspaceViewId =
 export type MessageCategory = "registration" | "security" | "marketing";
 export type MessageStatus = "pending" | "processed";
 export type WorkspaceExtractKind = "code" | "link";
+export type WorkspaceSyncState = "ready";
+export type WorkspaceSyncPhase = "first" | "incremental";
+export type WorkspaceMailboxKind = "inbox" | "spam_junk";
 
 export interface MailServerConfig {
   host: string;
@@ -47,15 +50,20 @@ export interface NavigationItem {
 
 export interface WorkspaceMessageItem {
   id: string;
+  account_id: string;
   subject: string;
   sender: string;
   account_name: string;
+  mailbox_id: string;
+  mailbox_label: string;
   received_at: string;
   category: MessageCategory;
   status: MessageStatus;
   has_code: boolean;
   has_link: boolean;
   preview: string;
+  prefetched_body: boolean;
+  synced_at: string;
 }
 
 export interface WorkspaceMessageGroup {
@@ -66,9 +74,12 @@ export interface WorkspaceMessageGroup {
 
 export interface WorkspaceMessageDetail {
   id: string;
+  account_id: string;
   subject: string;
   sender: string;
   account_name: string;
+  mailbox_id: string;
+  mailbox_label: string;
   received_at: string;
   category: MessageCategory;
   status: MessageStatus;
@@ -76,6 +87,9 @@ export interface WorkspaceMessageDetail {
   summary: string;
   extracted_code: string | null;
   verification_link: string | null;
+  body_text?: string | null;
+  prefetched_body: boolean;
+  synced_at: string;
 }
 
 export interface WorkspaceExtractItem {
@@ -96,15 +110,39 @@ export interface WorkspaceSiteSummary {
   latest_sender: string;
 }
 
+export interface WorkspaceSyncStatus {
+  state: WorkspaceSyncState;
+  summary: string;
+  phase?: WorkspaceSyncPhase | null;
+  poll_interval_minutes?: number | null;
+  retention_days?: number | null;
+  next_poll_at?: string | null;
+  folders?: string[];
+}
+
+export interface WorkspaceMailboxSummary {
+  id: string;
+  account_id: string;
+  account_name: string;
+  label: string;
+  kind: WorkspaceMailboxKind;
+  total_count: number;
+  unread_count: number;
+  verification_count: number;
+}
+
 export interface WorkspaceBootstrapSnapshot {
   app_name: string;
   generated_at: string;
   default_view: WorkspaceViewId;
   navigation: NavigationItem[];
+  mailboxes: WorkspaceMailboxSummary[];
   message_groups: WorkspaceMessageGroup[];
   selected_message: WorkspaceMessageDetail;
+  message_details: WorkspaceMessageDetail[];
   extracts: WorkspaceExtractItem[];
   site_summaries: WorkspaceSiteSummary[];
+  sync_status?: WorkspaceSyncStatus | null;
 }
 
 export interface AddAccountCommandInput {
