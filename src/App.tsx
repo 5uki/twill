@@ -5,7 +5,7 @@ import {
   ServerRegular,
   ShieldKeyholeRegular,
 } from "@fluentui/react-icons";
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { AccountsWorkspace } from "./components/AccountsWorkspace";
 import {
@@ -24,20 +24,50 @@ import { Titlebar } from "./components/Titlebar";
 import { TopHeader } from "./components/TopHeader";
 import {
   addAccount,
+  applyWorkspaceMessageAction as applyWorkspaceMessageActionFromApi,
+  confirmWorkspaceSite as confirmWorkspaceSiteFromApi,
   getErrorMessage,
   hasDesktopRuntime,
   listAccounts,
+  listWorkspaceMessages,
   loadWorkspaceBootstrap,
   openExternalUrl,
+  openWorkspaceMessage as openWorkspaceMessageFromApi,
+  openWorkspaceMessageOriginal as openWorkspaceMessageOriginalFromApi,
+  readWorkspaceMessage,
+  resolveWorkspaceSiteContext as resolveWorkspaceSiteContextFromApi,
   syncWorkspace,
   testAccountConnection,
+  updateWorkspaceMessageReadState,
+  updateWorkspaceMessageStatus,
 } from "./lib/app-api";
 import type {
   AccountConnectionTestResult,
   AccountSummary,
+  MessageReadState,
+  MessageStatus,
   WorkspaceBootstrapSnapshot,
+  WorkspaceExtractItem,
+  WorkspaceMessageAction,
+  WorkspaceMessageDetail,
+  WorkspaceMessageItem,
+  WorkspaceSiteContextResolution,
   WorkspaceViewId,
 } from "./lib/app-types";
+import {
+  applyWorkspaceMessageAction as applyWorkspaceMessageActionToSnapshot,
+  applyWorkspaceMessageReadState,
+  applyWorkspaceMessageStatus,
+  buildWorkspaceMessageFilter,
+  confirmWorkspaceSite as confirmWorkspaceSiteInSnapshot,
+  findWorkspaceMessageIdForExtract,
+  filterWorkspaceMessages,
+  openWorkspaceMessage as openWorkspaceMessageInSnapshot,
+  openWorkspaceMessageOriginal as openWorkspaceMessageOriginalInSnapshot,
+  resolveWorkspaceSiteContext as resolveWorkspaceSiteContextFromSnapshot,
+  resolveSelectedWorkspaceMessage,
+  type WorkspaceMessageCategoryFilter,
+} from "./lib/workspace-reading";
 import {
   getWorkspaceGroup,
   getWorkspaceGroupLabel,
@@ -50,6 +80,18 @@ import workspaceBootstrap from "./data/workspace-bootstrap.json";
 
 const fallbackWorkspaceSnapshot =
   workspaceBootstrap as WorkspaceBootstrapSnapshot;
+const fallbackActiveCategory = mapWorkspaceViewToCategory(
+  fallbackWorkspaceSnapshot.default_view,
+);
+const fallbackReadingState = resolveReadingState(
+  fallbackWorkspaceSnapshot,
+  fallbackActiveCategory,
+  "all",
+  "",
+  null,
+  false,
+  fallbackWorkspaceSnapshot.selected_message.id,
+);
 
 const navigationIconMap: Record<WorkspaceViewId, JSX.Element> = {
   recent_verification: <ShieldKeyholeRegular />,
@@ -63,7 +105,7 @@ function App() {
   const [workspaceSnapshot, setWorkspaceSnapshot] =
     useState<WorkspaceBootstrapSnapshot>(fallbackWorkspaceSnapshot);
   const [activeCategory, setActiveCategory] = useState<WorkspaceCategory>(
-    mapWorkspaceViewToCategory(fallbackWorkspaceSnapshot.default_view),
+    fallbackActiveCategory,
   );
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [accountDraft, setAccountDraft] = useState<AccountFormDraft>(
@@ -76,6 +118,35 @@ function App() {
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [currentSiteValue, setCurrentSiteValue] = useState("");
+  const [isConfirmingSite, setIsConfirmingSite] = useState(false);
+  const [siteResolution, setSiteResolution] =
+    useState<WorkspaceSiteContextResolution>(
+      resolveWorkspaceSiteContextFromSnapshot(fallbackWorkspaceSnapshot, ""),
+    );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [messageCategoryFilter, setMessageCategoryFilter] =
+    useState<WorkspaceMessageCategoryFilter>("all");
+  const [showOlderVerificationMessages, setShowOlderVerificationMessages] =
+    useState(false);
+  const [visibleMessages, setVisibleMessages] = useState<WorkspaceMessageItem[]>(
+    fallbackReadingState.messages,
+  );
+  const [selectedMessage, setSelectedMessage] =
+    useState<WorkspaceMessageDetail | null>(fallbackReadingState.selectedMessage);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    fallbackReadingState.selectedMessageId,
+  );
+  const [isReadingLoading, setIsReadingLoading] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
+  const selectedMessageIdRef = useRef<string | null>(
+    fallbackReadingState.selectedMessageId,
+  );
+
+  const updateSelectedMessageId = (nextId: string | null) => {
+    selectedMessageIdRef.current = nextId;
+    setSelectedMessageId(nextId);
+  };
 
   const resolveWorkspaceSnapshot = async (nextAccounts: AccountSummary[]) => {
     if (nextAccounts.length === 0) {
@@ -132,6 +203,151 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const localResolution = resolveWorkspaceSiteContextFromSnapshot(
+      workspaceSnapshot,
+      currentSiteValue,
+    );
+
+    startTransition(() => {
+      setSiteResolution(localResolution);
+    });
+
+    if (!runtimeAvailable) {
+      return;
+    }
+
+    const loadSiteResolution = async () => {
+      try {
+        const nextResolution = await resolveWorkspaceSiteContextFromApi(currentSiteValue);
+
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setSiteResolution(nextResolution);
+        });
+      } catch {
+        if (cancelled) {
+          return;
+        }
+      }
+    };
+
+    void loadSiteResolution();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSiteValue, runtimeAvailable, workspaceSnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isMailCategory(activeCategory)) {
+      startTransition(() => {
+        setVisibleMessages([]);
+        setSelectedMessage(null);
+        updateSelectedMessageId(null);
+        setMessageError(null);
+      });
+      setIsReadingLoading(false);
+      return;
+    }
+
+    const localState = resolveReadingState(
+      workspaceSnapshot,
+      activeCategory,
+      messageCategoryFilter,
+      searchQuery,
+      siteResolution.matched_site?.hostname ?? null,
+      showOlderVerificationMessages,
+      selectedMessageIdRef.current,
+    );
+
+    const loadReadingState = async () => {
+      setIsReadingLoading(true);
+
+      if (!runtimeAvailable) {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setVisibleMessages(localState.messages);
+          setSelectedMessage(localState.selectedMessage);
+          updateSelectedMessageId(localState.selectedMessageId);
+          setMessageError(null);
+        });
+        setIsReadingLoading(false);
+        return;
+      }
+
+      const filter = buildWorkspaceMessageFilter(
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages ? null : undefined,
+      );
+
+      try {
+        const messages = await listWorkspaceMessages(filter);
+        const nextSelectedId =
+          (selectedMessageIdRef.current &&
+          messages.some((message) => message.id === selectedMessageIdRef.current)
+            ? selectedMessageIdRef.current
+            : messages[0]?.id) ?? null;
+        const nextSelectedMessage = nextSelectedId
+          ? await readWorkspaceMessage(nextSelectedId)
+          : null;
+
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setVisibleMessages(messages);
+          setSelectedMessage(nextSelectedMessage);
+          updateSelectedMessageId(nextSelectedId);
+          setMessageError(null);
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setVisibleMessages(localState.messages);
+          setSelectedMessage(localState.selectedMessage);
+          updateSelectedMessageId(localState.selectedMessageId);
+          setMessageError(getErrorMessage(error));
+        });
+      } finally {
+        if (!cancelled) {
+          setIsReadingLoading(false);
+        }
+      }
+    };
+
+    void loadReadingState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeCategory,
+    messageCategoryFilter,
+    runtimeAvailable,
+    searchQuery,
+    showOlderVerificationMessages,
+    siteResolution,
+    workspaceSnapshot,
+  ]);
 
   const sidebarItems: SidebarItem[] = workspaceSnapshot.navigation.map((item) => {
     const category = mapWorkspaceViewToCategory(item.id);
@@ -231,6 +447,249 @@ function App() {
     }
   };
 
+  const handleSelectMessage = async (messageId: string) => {
+    if (!isMailCategory(activeCategory) || messageId === selectedMessageIdRef.current) {
+      return;
+    }
+
+    updateSelectedMessageId(messageId);
+
+    try {
+      setIsReadingLoading(true);
+      setMessageError(null);
+      const result = runtimeAvailable
+        ? await openWorkspaceMessageFromApi(messageId)
+        : openWorkspaceMessageInSnapshot(workspaceSnapshot, messageId);
+      const localState = resolveReadingState(
+        result.snapshot,
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages,
+        messageId,
+      );
+
+      startTransition(() => {
+        setWorkspaceSnapshot(result.snapshot);
+        setVisibleMessages(localState.messages);
+        setSelectedMessage(localState.selectedMessage ?? result.detail);
+        updateSelectedMessageId(localState.selectedMessageId);
+      });
+    } catch (error) {
+      const localState = resolveReadingState(
+        workspaceSnapshot,
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages,
+        messageId,
+      );
+
+      startTransition(() => {
+        setSelectedMessage(localState.selectedMessage);
+        updateSelectedMessageId(localState.selectedMessageId);
+        setMessageError(getErrorMessage(error));
+      });
+    } finally {
+      setIsReadingLoading(false);
+    }
+  };
+
+  const handleUpdateMessageStatus = async (status: MessageStatus) => {
+    if (!isMailCategory(activeCategory) || !selectedMessageIdRef.current) {
+      return;
+    }
+
+    const messageId = selectedMessageIdRef.current;
+
+    try {
+      setIsReadingLoading(true);
+      setMessageError(null);
+      const nextSnapshot = runtimeAvailable
+        ? await updateWorkspaceMessageStatus(messageId, status)
+        : applyWorkspaceMessageStatus(workspaceSnapshot, messageId, status);
+      const localState = resolveReadingState(
+        nextSnapshot,
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages,
+        messageId,
+      );
+
+      startTransition(() => {
+        setWorkspaceSnapshot(nextSnapshot);
+        setVisibleMessages(localState.messages);
+        setSelectedMessage(localState.selectedMessage);
+        updateSelectedMessageId(localState.selectedMessageId);
+      });
+    } catch (error) {
+      setMessageError(getErrorMessage(error));
+    } finally {
+      setIsReadingLoading(false);
+    }
+  };
+
+  const handleUpdateMessageReadState = async (readState: MessageReadState) => {
+    if (!isMailCategory(activeCategory) || !selectedMessageIdRef.current) {
+      return;
+    }
+
+    const messageId = selectedMessageIdRef.current;
+
+    try {
+      setIsReadingLoading(true);
+      setMessageError(null);
+      const nextSnapshot = runtimeAvailable
+        ? await updateWorkspaceMessageReadState(messageId, readState)
+        : applyWorkspaceMessageReadState(workspaceSnapshot, messageId, readState);
+      const localState = resolveReadingState(
+        nextSnapshot,
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages,
+        messageId,
+      );
+
+      startTransition(() => {
+        setWorkspaceSnapshot(nextSnapshot);
+        setVisibleMessages(localState.messages);
+        setSelectedMessage(localState.selectedMessage);
+        updateSelectedMessageId(localState.selectedMessageId);
+      });
+    } catch (error) {
+      setMessageError(getErrorMessage(error));
+    } finally {
+      setIsReadingLoading(false);
+    }
+  };
+
+  const handleWorkspaceMessageAction = async (
+    messageId: string,
+    action: WorkspaceMessageAction,
+  ) => {
+    if (!isMailCategory(activeCategory)) {
+      return;
+    }
+
+    try {
+      setIsReadingLoading(true);
+      setMessageError(null);
+      const result = runtimeAvailable
+        ? await applyWorkspaceMessageActionFromApi(messageId, action)
+        : applyWorkspaceMessageActionToSnapshot(
+            workspaceSnapshot,
+            messageId,
+            action,
+          );
+      const localState = resolveReadingState(
+        result.snapshot,
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages,
+        messageId,
+      );
+
+      startTransition(() => {
+        setWorkspaceSnapshot(result.snapshot);
+        setVisibleMessages(localState.messages);
+        setSelectedMessage(localState.selectedMessage);
+        updateSelectedMessageId(localState.selectedMessageId);
+      });
+    } catch (error) {
+      setMessageError(getErrorMessage(error));
+    } finally {
+      setIsReadingLoading(false);
+    }
+  };
+
+  const handleOpenOriginalMessage = async () => {
+    if (!isMailCategory(activeCategory) || !selectedMessageIdRef.current) {
+      return;
+    }
+
+    const messageId = selectedMessageIdRef.current;
+
+    try {
+      setIsReadingLoading(true);
+      setMessageError(null);
+      const result = runtimeAvailable
+        ? await openWorkspaceMessageOriginalFromApi(messageId)
+        : openWorkspaceMessageOriginalInSnapshot(workspaceSnapshot, messageId);
+      const localState = resolveReadingState(
+        result.snapshot,
+        activeCategory,
+        messageCategoryFilter,
+        searchQuery,
+        siteResolution.matched_site?.hostname ?? null,
+        showOlderVerificationMessages,
+        messageId,
+      );
+
+      startTransition(() => {
+        setWorkspaceSnapshot(result.snapshot);
+        setVisibleMessages(localState.messages);
+        setSelectedMessage(localState.selectedMessage);
+        updateSelectedMessageId(localState.selectedMessageId);
+      });
+
+      await openExternalUrl(result.original_url);
+    } catch (error) {
+      setMessageError(getErrorMessage(error));
+    } finally {
+      setIsReadingLoading(false);
+    }
+  };
+
+  const handleExtractAction = async (item: WorkspaceExtractItem) => {
+    const messageId = findWorkspaceMessageIdForExtract(workspaceSnapshot, item);
+
+    if (!messageId) {
+      setMessageError("未找到提取项对应的邮件，无法自动更新状态。");
+      return;
+    }
+
+    await handleWorkspaceMessageAction(
+      messageId,
+      item.kind === "code" ? "copy_code" : "open_link",
+    );
+  };
+
+  const handleConfirmWorkspaceSite = async () => {
+    const confirmInput = siteResolution.normalized_domain ?? currentSiteValue;
+
+    if (!confirmInput.trim()) {
+      return;
+    }
+
+    try {
+      setIsConfirmingSite(true);
+      setMessageError(null);
+      const nextSnapshot = runtimeAvailable
+        ? await confirmWorkspaceSiteFromApi(confirmInput)
+        : confirmWorkspaceSiteInSnapshot(workspaceSnapshot, confirmInput);
+      const nextSiteValue =
+        resolveWorkspaceSiteContextFromSnapshot(nextSnapshot, confirmInput)
+          .normalized_domain ?? confirmInput;
+
+      startTransition(() => {
+        setWorkspaceSnapshot(nextSnapshot);
+        setCurrentSiteValue(nextSiteValue);
+      });
+    } catch (error) {
+      setMessageError(getErrorMessage(error));
+    } finally {
+      setIsConfirmingSite(false);
+    }
+  };
+
   const syncSummary =
     syncErrorMessage ??
     workspaceSnapshot.sync_status?.summary ??
@@ -256,9 +715,19 @@ function App() {
           <div className="main-workspace">
             <TopHeader
               canSync={runtimeAvailable && accounts.length > 0}
+              currentSiteValue={currentSiteValue}
               hasSyncError={syncErrorMessage !== null}
               isSyncing={isSyncing}
+              isConfirmingSite={isConfirmingSite}
+              searchValue={searchQuery}
+              siteResolution={siteResolution}
+              onCurrentSiteChange={setCurrentSiteValue}
+              onConfirmSite={() => {
+                void handleConfirmWorkspaceSite();
+              }}
+              onCurrentSiteSelect={setCurrentSiteValue}
               syncSummary={syncSummary}
+              onSearchChange={setSearchQuery}
               onSync={() => {
                 void handleSyncWorkspace();
               }}
@@ -286,7 +755,41 @@ function App() {
                 />
               }
               category={activeCategory}
+              messageCategoryFilter={messageCategoryFilter}
+              messageError={messageError}
+              messages={visibleMessages}
+              selectedMessage={selectedMessage}
+              selectedMessageId={selectedMessageId}
+              showOlderVerificationMessages={showOlderVerificationMessages}
               snapshot={workspaceSnapshot}
+              isReadingLoading={isReadingLoading}
+              onMessageCategoryChange={setMessageCategoryFilter}
+              onMessageAction={async (action) => {
+                if (!selectedMessageIdRef.current) {
+                  return;
+                }
+
+                await handleWorkspaceMessageAction(
+                  selectedMessageIdRef.current,
+                  action,
+                );
+              }}
+              onExtractAction={handleExtractAction}
+              onMessageStatusChange={(status) => {
+                void handleUpdateMessageStatus(status);
+              }}
+              onMessageReadStateChange={(readState) => {
+                void handleUpdateMessageReadState(readState);
+              }}
+              onMessageSelect={(messageId) => {
+                void handleSelectMessage(messageId);
+              }}
+              onOpenOriginalMessage={() => {
+                void handleOpenOriginalMessage();
+              }}
+              onToggleVerificationWindow={() => {
+                setShowOlderVerificationMessages((current) => !current);
+              }}
               onOpenVerificationLink={(url) => openExternalUrl(url)}
             />
           </div>
@@ -294,6 +797,50 @@ function App() {
       </div>
     </FluentProvider>
   );
+}
+
+function isMailCategory(
+  category: WorkspaceCategory,
+): category is "verifications" | "inbox" {
+  return category === "verifications" || category === "inbox";
+}
+
+function resolveReadingState(
+  snapshot: WorkspaceBootstrapSnapshot,
+  category: WorkspaceCategory,
+  messageCategoryFilter: WorkspaceMessageCategoryFilter,
+  searchQuery: string,
+  siteHint: string | null,
+  showOlderVerificationMessages: boolean,
+  preferredMessageId: string | null,
+) {
+  if (!isMailCategory(category)) {
+    return {
+      messages: [] as WorkspaceMessageItem[],
+      selectedMessage: null as WorkspaceMessageDetail | null,
+      selectedMessageId: null as string | null,
+    };
+  }
+
+  const filter = buildWorkspaceMessageFilter(
+    category,
+    messageCategoryFilter,
+    searchQuery,
+    siteHint,
+    showOlderVerificationMessages ? null : undefined,
+  );
+  const messages = filterWorkspaceMessages(snapshot, filter);
+  const selectedMessage = resolveSelectedWorkspaceMessage(
+    snapshot,
+    messages,
+    preferredMessageId,
+  );
+
+  return {
+    messages,
+    selectedMessage,
+    selectedMessageId: selectedMessage?.id ?? null,
+  };
 }
 
 export default App;

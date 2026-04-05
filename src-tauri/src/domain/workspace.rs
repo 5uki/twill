@@ -26,6 +26,20 @@ pub enum MessageStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum MessageReadState {
+    Unread,
+    Read,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceMessageAction {
+    CopyCode,
+    OpenLink,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WorkspaceExtractKind {
     Code,
     Link,
@@ -49,6 +63,10 @@ pub enum WorkspaceSyncState {
 pub enum WorkspaceSyncPhase {
     First,
     Incremental,
+}
+
+fn default_message_read_state() -> MessageReadState {
+    MessageReadState::Unread
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +120,8 @@ pub struct WorkspaceMessageItem {
     pub received_at: String,
     pub category: MessageCategory,
     pub status: MessageStatus,
+    #[serde(default = "default_message_read_state")]
+    pub read_state: MessageReadState,
     pub has_code: bool,
     pub has_link: bool,
     pub preview: String,
@@ -133,10 +153,14 @@ pub struct WorkspaceMessageDetail {
     pub received_at: String,
     pub category: MessageCategory,
     pub status: MessageStatus,
+    #[serde(default = "default_message_read_state")]
+    pub read_state: MessageReadState,
     pub site_hint: String,
     pub summary: String,
     pub extracted_code: Option<String>,
     pub verification_link: Option<String>,
+    #[serde(default)]
+    pub original_message_url: Option<String>,
     #[serde(default)]
     pub body_text: Option<String>,
     #[serde(default)]
@@ -163,6 +187,41 @@ pub struct WorkspaceSiteSummary {
     pub hostname: String,
     pub pending_count: u32,
     pub latest_sender: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceSiteContextResolution {
+    pub input: String,
+    #[serde(default)]
+    pub normalized_domain: Option<String>,
+    #[serde(default)]
+    pub matched_site: Option<WorkspaceSiteSummary>,
+    #[serde(default)]
+    pub candidate_sites: Vec<WorkspaceSiteSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceMessageActionResult {
+    pub action: WorkspaceMessageAction,
+    pub message_id: String,
+    #[serde(default)]
+    pub copied_value: Option<String>,
+    #[serde(default)]
+    pub opened_url: Option<String>,
+    pub snapshot: WorkspaceBootstrapSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceMessageOpenResult {
+    pub detail: WorkspaceMessageDetail,
+    pub snapshot: WorkspaceBootstrapSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceMessageOriginalOpenResult {
+    pub message_id: String,
+    pub original_url: String,
+    pub snapshot: WorkspaceBootstrapSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

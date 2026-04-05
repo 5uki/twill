@@ -1,0 +1,44 @@
+{
+  "id": "implement-m3-message-processing-flow",
+  "name": "implement-m3-message-processing-flow",
+  "title": "implement: M3 message processing flow",
+  "description": "在 M3 阅读首切片基础上补齐消息状态回写链路：支持手动标记已处理 / 撤销已处理，并同步更新 CLI、Tauri、前端工作台和本地预览回退逻辑。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-05",
+  "completedAt": "2026-04-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [],
+  "notes": "已完成 workspace message status 更新服务、Tauri command、CLI message mark、前端详情操作按钮和本地 snapshot 回写 helper，并补齐 Rust/Bun 测试与 CLI 实跑验证。",
+  "meta": {}
+}

@@ -1,0 +1,44 @@
+{
+  "id": "implement-m3-current-site-matching-flow",
+  "name": "implement-m3-current-site-matching-flow",
+  "title": "implement: M3 current site matching flow",
+  "description": "在 M3 阅读与手动处理流基础上补齐“当前站点”最小闭环：支持顶部域名输入、站点精确匹配与候选提示，并让 CLI / Tauri / 前端共用同一套站点解析与消息筛选合同。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-05",
+  "completedAt": "2026-04-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [],
+  "notes": "已完成 current site 顶栏输入、site-context resolve 命令、message list --site 过滤、站点候选提示，以及 Rust/Bun/CLI 验证与 CLI 实跑。",
+  "meta": {}
+}

@@ -1,0 +1,44 @@
+{
+  "id": "implement-m3-read-unread-flow",
+  "name": "implement-m3-read-unread-flow",
+  "title": "implement: M3 read unread flow",
+  "description": "补齐 M3 独立 read/unread 能力：支持在不改变 pending/processed 的前提下显式标记已读或未读，并贯通 CLI / Tauri / 前端详情面板。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-05",
+  "completedAt": "2026-04-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [],
+  "notes": "已完成 update_workspace_message_read_state 服务/Tauri/CLI/前端接入，并补齐本地 helper、前端渲染断言和全量验证。",
+  "meta": {}
+}

@@ -124,6 +124,7 @@ fn update_message_details(
                         received_at: item.received_at.clone(),
                         category: item.category,
                         status: item.status,
+                        read_state: item.read_state,
                         site_hint: item
                             .sender
                             .split('@')
@@ -133,6 +134,7 @@ fn update_message_details(
                         summary: item.preview.clone(),
                         extracted_code: None,
                         verification_link: None,
+                        original_message_url: None,
                         body_text: None,
                         prefetched_body: item.prefetched_body,
                         synced_at: item.synced_at.clone(),
@@ -286,7 +288,7 @@ fn build_mailboxes(message_groups: &[WorkspaceMessageGroup]) -> Vec<WorkspaceMai
                 let mailbox = entry.get_mut();
                 mailbox.total_count += 1;
                 mailbox.unread_count +=
-                    (item.status == crate::domain::workspace::MessageStatus::Pending) as u32;
+                    (item.read_state == crate::domain::workspace::MessageReadState::Unread) as u32;
                 mailbox.verification_count += (item.has_code || item.has_link) as u32;
             }
             Entry::Vacant(entry) => {
@@ -297,7 +299,8 @@ fn build_mailboxes(message_groups: &[WorkspaceMessageGroup]) -> Vec<WorkspaceMai
                     label: item.mailbox_label.clone(),
                     kind,
                     total_count: 1,
-                    unread_count: (item.status == crate::domain::workspace::MessageStatus::Pending)
+                    unread_count: (item.read_state
+                        == crate::domain::workspace::MessageReadState::Unread)
                         as u32,
                     verification_count: (item.has_code || item.has_link) as u32,
                 });

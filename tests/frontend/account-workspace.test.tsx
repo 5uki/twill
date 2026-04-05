@@ -3,6 +3,7 @@ import { MailInboxRegular, PersonAccountsRegular } from "@fluentui/react-icons";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { WorkspaceSiteContextResolution } from "../../src/lib/app-types";
 import { AccountsWorkspace } from "../../src/components/AccountsWorkspace";
 import { MailWorkspace } from "../../src/components/MailWorkspace";
 import { TopHeader } from "../../src/components/TopHeader";
@@ -166,5 +167,77 @@ describe("sync header", () => {
     );
 
     expect(markup.includes("同步中")).toBe(true);
+  });
+});
+
+describe("current site header", () => {
+  test("separates current site input from global search and renders candidate sites", () => {
+    const resolution: WorkspaceSiteContextResolution = {
+      input: "lin",
+      normalized_domain: "lin",
+      matched_site: null,
+      candidate_sites: [
+        {
+          id: "site_linear",
+          label: "Linear",
+          hostname: "linear.app",
+          pending_count: 1,
+          latest_sender: "hello@linear.app",
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(
+      <TopHeader
+        canSync
+        currentSiteValue="lin"
+        searchValue="362149"
+        siteResolution={resolution}
+        onCurrentSiteChange={() => {}}
+        onCurrentSiteSelect={() => {}}
+        onSearchChange={() => {}}
+        onSync={() => {}}
+      />,
+    );
+
+    expect(markup.includes("输入当前站点")).toBe(true);
+    expect(markup.includes("搜索邮件")).toBe(true);
+    expect(markup.includes("linear.app")).toBe(true);
+  });
+});
+
+describe("site confirmation header", () => {
+  test("shows a confirm action when the normalized site is not yet in the site list", () => {
+    const resolution: WorkspaceSiteContextResolution = {
+      input: "https://vercel.com/login",
+      normalized_domain: "vercel.com",
+      matched_site: null,
+      candidate_sites: [],
+    };
+    const markup = renderToStaticMarkup(
+      <TopHeader
+        canSync
+        currentSiteValue="https://vercel.com/login"
+        searchValue=""
+        siteResolution={resolution}
+        onCurrentSiteChange={() => {}}
+        onCurrentSiteSelect={() => {}}
+        onSearchChange={() => {}}
+        onSync={() => {}}
+      />,
+    );
+
+    expect(markup.includes("加入网站清单")).toBe(true);
+    expect(markup.includes("vercel.com")).toBe(true);
+  });
+});
+
+describe("mail workspace reading controls", () => {
+  test("shows the recent 48 hours scope, open original action, and read toggle", () => {
+    const markup = renderToStaticMarkup(<MailWorkspace category="verifications" />);
+
+    expect(markup.includes("最近 48 小时")).toBe(true);
+    expect(markup.includes("查看更早邮件")).toBe(true);
+    expect(markup.includes("打开原始邮件")).toBe(true);
+    expect(markup.includes("标记已读")).toBe(true);
   });
 });

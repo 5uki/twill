@@ -4,7 +4,9 @@ use crate::domain::account::{
     MailServerConfig,
 };
 use crate::domain::error::AppError;
-use crate::domain::workspace::WorkspaceMailboxKind;
+use crate::domain::workspace::{
+    MessageCategory, MessageReadState, MessageStatus, WorkspaceMailboxKind, WorkspaceMessageAction,
+};
 use crate::infra::account_preflight::LiveAccountConnectionTester;
 use crate::infra::account_secret_store::KeyringAccountSecretStore;
 use crate::infra::account_store::JsonFileAccountRepository;
@@ -131,6 +133,79 @@ where
             ensure_no_unknown_flags(&flags)?;
             render_message_read(format, workspace_repository, &message_id)
         }
+        [message, open, rest @ ..] if message == "message" && open == "open" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let message_id = take_required_flag(&mut flags, "--id")?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_open(format, workspace_repository, &message_id)
+        }
+        [message, original, rest @ ..] if message == "message" && original == "original" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let message_id = take_required_flag(&mut flags, "--id")?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_original(format, workspace_repository, &message_id)
+        }
+        [message, mark, rest @ ..] if message == "message" && mark == "mark" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let message_id = take_required_flag(&mut flags, "--id")?;
+            let status = parse_message_status(&take_required_flag(&mut flags, "--status")?)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_mark(format, workspace_repository, &message_id, status)
+        }
+        [message, read_state, rest @ ..]
+            if message == "message" && read_state == "read-state" =>
+        {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let message_id = take_required_flag(&mut flags, "--id")?;
+            let read_state =
+                parse_message_read_state(&take_required_flag(&mut flags, "--state")?)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_read_state(format, workspace_repository, &message_id, read_state)
+        }
+        [message, action, rest @ ..] if message == "message" && action == "action" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let message_id = take_required_flag(&mut flags, "--id")?;
+            let action =
+                parse_message_action(&take_required_flag(&mut flags, "--action")?)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_action(format, workspace_repository, &message_id, action)
+        }
+        [site_context, resolve, rest @ ..]
+            if site_context == "site-context" && resolve == "resolve" =>
+        {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let domain = take_required_flag(&mut flags, "--domain")?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_site_context_resolve(format, workspace_repository, &domain)
+        }
+        [site_context, confirm, rest @ ..]
+            if site_context == "site-context" && confirm == "confirm" =>
+        {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let domain = take_required_flag(&mut flags, "--domain")?;
+            let label = flags.remove("--label");
+
+            ensure_no_unknown_flags(&flags)?;
+            render_site_context_confirm(
+                format,
+                workspace_repository,
+                &domain,
+                label.as_deref(),
+            )
+        }
         [account, list] if account == "account" && list == "list" => {
             render_account_list(OutputFormat::Text, repository, secret_store)
         }
@@ -159,13 +234,21 @@ where
         }
         _ => Err(AppError::InvalidCliArgs {
             message: concat!(
-                "用法:\n",
+                "鐢ㄦ硶:\n",
                 "  workspace bootstrap [--format text|json]\n",
                 "  sync run [--format text|json]\n",
                 "  mailbox list [--format text|json]\n",
                 "  message list [--account <account-id>] [--mailbox <inbox|spam_junk>] ",
-                "[--verification-only <true|false>] [--format text|json]\n",
+                "[--verification-only <true|false>] [--category <registration|security|marketing>] [--site <hostname>] ",
+                "[--query <keyword>] [--recent-hours <hours>] [--format text|json]\n",
                 "  message read --id <message-id> [--format text|json]\n",
+                "  message open --id <message-id> [--format text|json]\n",
+                "  message original --id <message-id> [--format text|json]\n",
+                "  message mark --id <message-id> --status <pending|processed> [--format text|json]\n",
+                "  message read-state --id <message-id> --state <unread|read> [--format text|json]\n",
+                "  message action --id <message-id> --action <copy_code|open_link> [--format text|json]\n",
+                "  site-context resolve --domain <domain> [--format text|json]\n",
+                "  site-context confirm --domain <domain> [--label <label>] [--format text|json]\n",
                 "  account list [--format text|json]\n",
                 "  account add --name <name> --email <email> --login <login> --password <password> ",
                 "--imap-host <host> --imap-port <port> --imap-security <none|start_tls|tls> ",
@@ -200,7 +283,7 @@ where
                 .join("\n");
 
             Ok(format!(
-                "Twill workspace bootstrap\n默认视图: Recent verification\n生成时间: {}\n导航:\n{}\n当前选中: {}\n验证码: {}\n链接: {}",
+                "Twill workspace bootstrap\n榛樿瑙嗗浘: Recent verification\n鐢熸垚鏃堕棿: {}\n瀵艰埅:\n{}\n褰撳墠閫変腑: {}\n楠岃瘉鐮? {}\n閾炬帴: {}",
                 snapshot.generated_at,
                 navigation,
                 snapshot.selected_message.subject,
@@ -252,7 +335,7 @@ where
         .sync_status
         .as_ref()
         .map(|status| status.summary.as_str())
-        .unwrap_or("收件箱缓存已更新");
+        .unwrap_or("鏀朵欢绠辩紦瀛樺凡鏇存柊");
 
     match format {
         OutputFormat::Json => {
@@ -261,7 +344,7 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "收件箱同步已完成\n状态: {sync_summary}\n消息数: {message_count}\n验证消息: {verification_count}\n当前选中: {}",
+            "鏀朵欢绠卞悓姝ュ凡瀹屾垚\n鐘舵€? {sync_summary}\n娑堟伅鏁? {message_count}\n楠岃瘉娑堟伅: {verification_count}\n褰撳墠閫変腑: {}",
             snapshot.selected_message.subject
         )),
     }
@@ -364,18 +447,259 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "缓存消息详情\n主题: {}\n账号: {}\n邮箱: {}\n站点: {}\n摘要: {}\n正文缓存: {}\n同步时间: {}",
+            "缂撳瓨娑堟伅璇︽儏\n涓婚: {}\n璐﹀彿: {}\n閭: {}\n绔欑偣: {}\n鎽樿: {}\n姝ｆ枃缂撳瓨: {}\n鍚屾鏃堕棿: {}",
             message.subject,
             message.account_name,
             message.mailbox_label,
             message.site_hint,
             message.summary,
             if message.prefetched_body {
-                "已预抓取"
+                "宸查鎶撳彇"
             } else {
-                "仅元数据"
+                "浠呭厓鏁版嵁"
             },
             message.synced_at
+        )),
+    }
+}
+
+fn render_message_open<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    message_id: &str,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let result = workspace_service::open_workspace_message(workspace_repository, message_id)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&result).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "瀹稿弶澧﹀鈧☉鍫熶紖\nID: {}\n娑撳顣? {}\n瀹歌尪顕伴悩鑸碘偓? {}",
+            result.detail.id,
+            result.detail.subject,
+            if result.detail.read_state == crate::domain::workspace::MessageReadState::Read {
+                "read"
+            } else {
+                "unread"
+            }
+        )),
+    }
+}
+
+fn render_message_original<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    message_id: &str,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let result =
+        workspace_service::open_workspace_message_original(workspace_repository, message_id)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&result).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "瀹稿弶澧﹀鈧崢鐔奉潗闁喕娆nID: {}\n閸樼喎顫愰崗銉ュ經: {}",
+            result.message_id, result.original_url
+        )),
+    }
+}
+
+fn render_message_mark<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    message_id: &str,
+    status: MessageStatus,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let snapshot = workspace_service::update_workspace_message_status(
+        workspace_repository,
+        message_id,
+        status,
+    )?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&snapshot).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => {
+            let action = match status {
+                MessageStatus::Pending => "已撤销已处理",
+                MessageStatus::Processed => "已标记为已处理",
+            };
+
+            Ok(format!(
+                "娑堟伅鐘舵€佸凡鏇存柊\n娑堟伅 ID: {message_id}\n缁撴灉: {action}\n褰撳墠閫変腑: {}",
+                snapshot.selected_message.subject
+            ))
+        }
+    }
+}
+
+fn render_message_read_state<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    message_id: &str,
+    read_state: MessageReadState,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let snapshot = workspace_service::update_workspace_message_read_state(
+        workspace_repository,
+        message_id,
+        read_state,
+    )?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&snapshot).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => {
+            let action = match read_state {
+                MessageReadState::Unread => "已标记为未读",
+                MessageReadState::Read => "已标记为已读",
+            };
+
+            Ok(format!(
+                "消息已读状态已更新\n消息 ID: {message_id}\n结果: {action}\n当前选中: {}",
+                snapshot.selected_message.subject
+            ))
+        }
+    }
+}
+
+fn render_message_action<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    message_id: &str,
+    action: WorkspaceMessageAction,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let result = workspace_service::apply_workspace_message_action(
+        workspace_repository,
+        message_id,
+        action,
+    )?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&result).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => {
+            let action_summary = match action {
+                WorkspaceMessageAction::CopyCode => format!(
+                    "宸插鍒堕獙璇佺爜: {}",
+                    result.copied_value.as_deref().unwrap_or("-")
+                ),
+                WorkspaceMessageAction::OpenLink => format!(
+                    "宸叉墦寮€閾炬帴: {}",
+                    result.opened_url.as_deref().unwrap_or("-")
+                ),
+            };
+
+            Ok(format!(
+                "娑堟伅鍔ㄤ綔宸插畬鎴怽n娑堟伅 ID: {message_id}\n缁撴灉: {action_summary}\n褰撳墠鐘舵€? processed"
+            ))
+        }
+    }
+}
+
+fn render_site_context_resolve<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    domain: &str,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let resolution =
+        workspace_service::resolve_workspace_site_context(workspace_repository, domain)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&resolution).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => {
+            if let Some(matched_site) = &resolution.matched_site {
+                return Ok(format!(
+                    "褰撳墠绔欑偣宸插尮閰峔n杈撳叆: {domain}\n褰掍竴鍖栧煙鍚? {}\n鍛戒腑绔欑偣: {} ({})",
+                    resolution.normalized_domain.as_deref().unwrap_or("-"),
+                    matched_site.label,
+                    matched_site.hostname
+                ));
+            }
+
+            let candidates = resolution
+                .candidate_sites
+                .iter()
+                .map(|site| format!("- {} ({})", site.label, site.hostname))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            if candidates.is_empty() {
+                Ok(format!(
+                    "当前站点未命中\n输入: {domain}\n归一化域名: {}\n候选站点: 无",
+                    resolution.normalized_domain.as_deref().unwrap_or("-")
+                ))
+            } else {
+                Ok(format!(
+                    "当前站点未命中\n输入: {domain}\n归一化域名: {}\n候选站点:\n{}",
+                    resolution.normalized_domain.as_deref().unwrap_or("-"),
+                    candidates
+                ))
+            }
+        }
+    }
+}
+
+fn render_site_context_confirm<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    domain: &str,
+    label: Option<&str>,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let snapshot = workspace_service::confirm_workspace_site(workspace_repository, domain, label)?;
+    let normalized_domain =
+        workspace_service::resolve_workspace_site_context(workspace_repository, domain)?
+            .normalized_domain;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&snapshot).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "已确认站点\n输入: {domain}\n归一化域名: {}\n站点总数: {}",
+            normalized_domain.as_deref().unwrap_or("-"),
+            snapshot.site_summaries.len()
         )),
     }
 }
@@ -405,7 +729,7 @@ where
                     .iter()
                     .map(|account| {
                         format!(
-                            "- {} <{}> | 凭据 {} | IMAP {}:{} {:?} | SMTP {}:{} {:?}",
+                            "- {} <{}> | 鍑嵁 {} | IMAP {}:{} {:?} | SMTP {}:{} {:?}",
                             account.display_name,
                             account.email,
                             format_credential_state(account.credential_state),
@@ -420,7 +744,7 @@ where
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                Ok(format!("已保存账户\n{lines}"))
+                Ok(format!("宸蹭繚瀛樿处鎴穃n{lines}"))
             }
         }
     }
@@ -445,7 +769,7 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "账户已保存\nID: {}\n名称: {}\n邮箱: {}\n凭据: {}\nIMAP: {}:{} ({:?})\nSMTP: {}:{} ({:?})",
+            "璐︽埛宸蹭繚瀛榎nID: {}\n鍚嶇О: {}\n閭: {}\n鍑嵁: {}\nIMAP: {}:{} ({:?})\nSMTP: {}:{} ({:?})",
             account.id,
             account.display_name,
             account.email,
@@ -482,8 +806,8 @@ where
 
 fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
     let status = match result.status {
-        AccountConnectionStatus::Passed => "通过",
-        AccountConnectionStatus::Failed => "失败",
+        AccountConnectionStatus::Passed => "閫氳繃",
+        AccountConnectionStatus::Failed => "澶辫触",
     };
 
     let checks = result
@@ -496,8 +820,8 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
                 AccountConnectionCheckTarget::Smtp => "SMTP",
             };
             let check_status = match check.status {
-                AccountConnectionStatus::Passed => "通过",
-                AccountConnectionStatus::Failed => "失败",
+                AccountConnectionStatus::Passed => "閫氳繃",
+                AccountConnectionStatus::Failed => "澶辫触",
             };
 
             format!("- {target}: {check_status} | {}", check.message)
@@ -506,7 +830,7 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
         .join("\n");
 
     format!(
-        "账户连接实时探测\n状态: {status}\n结论: {}\n{checks}",
+        "璐︽埛杩炴帴瀹炴椂鎺㈡祴\n鐘舵€? {status}\n缁撹: {}\n{checks}",
         result.summary
     )
 }
@@ -514,7 +838,7 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
 fn format_credential_state(state: AccountCredentialState) -> &'static str {
     match state {
         AccountCredentialState::Missing => "缺失",
-        AccountCredentialState::Stored => "已存储",
+        AccountCredentialState::Stored => "已保存",
     }
 }
 
@@ -645,11 +969,25 @@ fn parse_message_filter(
         Some(value) => parse_bool_flag(&value, "--verification-only")?,
         None => false,
     };
+    let category = match flags.remove("--category") {
+        Some(value) => Some(parse_message_category(&value)?),
+        None => None,
+    };
+    let site_hint = flags.remove("--site");
+    let query = flags.remove("--query");
+    let recent_hours = match flags.remove("--recent-hours") {
+        Some(value) => Some(parse_recent_hours(&value)?),
+        None => None,
+    };
 
     Ok(WorkspaceMessageFilter {
         account_id,
         mailbox_kind,
         verification_only,
+        category,
+        site_hint,
+        query,
+        recent_hours,
     })
 }
 
@@ -664,6 +1002,51 @@ fn parse_mailbox_kind(value: &str) -> Result<WorkspaceMailboxKind, AppError> {
     }
 }
 
+fn parse_message_category(value: &str) -> Result<MessageCategory, AppError> {
+    match value {
+        "registration" => Ok(MessageCategory::Registration),
+        "security" => Ok(MessageCategory::Security),
+        "marketing" => Ok(MessageCategory::Marketing),
+        other => Err(AppError::Validation {
+            field: "category".to_string(),
+            message: format!("不支持的消息分类: {other}"),
+        }),
+    }
+}
+
+fn parse_message_status(value: &str) -> Result<MessageStatus, AppError> {
+    match value {
+        "pending" => Ok(MessageStatus::Pending),
+        "processed" => Ok(MessageStatus::Processed),
+        other => Err(AppError::Validation {
+            field: "status".to_string(),
+            message: format!("不支持的消息状态: {other}"),
+        }),
+    }
+}
+
+fn parse_message_read_state(value: &str) -> Result<MessageReadState, AppError> {
+    match value {
+        "unread" => Ok(MessageReadState::Unread),
+        "read" => Ok(MessageReadState::Read),
+        other => Err(AppError::Validation {
+            field: "state".to_string(),
+            message: format!("不支持的已读状态: {other}"),
+        }),
+    }
+}
+
+fn parse_message_action(value: &str) -> Result<WorkspaceMessageAction, AppError> {
+    match value {
+        "copy_code" => Ok(WorkspaceMessageAction::CopyCode),
+        "open_link" => Ok(WorkspaceMessageAction::OpenLink),
+        other => Err(AppError::Validation {
+            field: "action".to_string(),
+            message: format!("不支持的消息动作: {other}"),
+        }),
+    }
+}
+
 fn parse_bool_flag(value: &str, field: &str) -> Result<bool, AppError> {
     match value {
         "true" => Ok(true),
@@ -673,6 +1056,13 @@ fn parse_bool_flag(value: &str, field: &str) -> Result<bool, AppError> {
             message: format!("布尔参数只支持 true/false，收到 {other}"),
         }),
     }
+}
+
+fn parse_recent_hours(value: &str) -> Result<u32, AppError> {
+    value.parse::<u32>().map_err(|_| AppError::Validation {
+        field: "recent_hours".to_string(),
+        message: format!("recent_hours 必须是正整数，收到 {value}"),
+    })
 }
 
 fn ensure_no_unknown_flags(flags: &BTreeMap<String, String>) -> Result<(), AppError> {
@@ -742,7 +1132,7 @@ mod tests {
 
         assert!(
             output.contains("Recent verification"),
-            "文本输出至少要包含默认工作台视图"
+            "鏂囨湰杈撳嚭鑷冲皯瑕佸寘鍚粯璁ゅ伐浣滃彴瑙嗗浘"
         );
     }
 
@@ -800,8 +1190,8 @@ mod tests {
             &sync_source,
         )
         .expect("列出账户应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
-        let metadata = fs::read_to_string(&store_path).expect("元数据文件应可读");
+        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        let metadata = fs::read_to_string(&store_path).expect("鍏冩暟鎹枃浠跺簲鍙");
 
         assert_eq!(parsed.as_array().map(|items| items.len()), Some(1));
         assert_eq!(parsed[0]["credential_state"], "stored");
@@ -851,7 +1241,7 @@ mod tests {
     #[test]
     fn reports_failed_live_probe_for_unreachable_ports() {
         let unreachable_imap_port = reserve_unused_port();
-        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("搴旇兘缁戝畾 SMTP 娴嬭瘯绔彛");
 
         let output = run_with_args_and_test_store(
             [
@@ -874,7 +1264,7 @@ mod tests {
                 "--smtp-port",
                 &smtp
                     .local_addr()
-                    .expect("应能读取 SMTP 地址")
+                    .expect("搴旇兘璇诲彇 SMTP 鍦板潃")
                     .port()
                     .to_string(),
                 "--smtp-security",
@@ -884,8 +1274,8 @@ mod tests {
             ],
             unique_store_path(),
         )
-        .expect("实时探测命令应返回结构化结果");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+        .expect("瀹炴椂鎺㈡祴鍛戒护搴旇繑鍥炵粨鏋勫寲缁撴灉");
+        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
 
         assert_eq!(parsed["status"], "failed");
         assert!(
@@ -898,8 +1288,8 @@ mod tests {
 
     #[test]
     fn reports_live_probe_success_when_servers_are_reachable() {
-        let imap = TcpListener::bind("127.0.0.1:0").expect("应能绑定 IMAP 测试端口");
-        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
+        let imap = TcpListener::bind("127.0.0.1:0").expect("搴旇兘缁戝畾 IMAP 娴嬭瘯绔彛");
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("搴旇兘缁戝畾 SMTP 娴嬭瘯绔彛");
 
         let output = run_with_args_and_test_store(
             [
@@ -916,7 +1306,7 @@ mod tests {
                 "--imap-port",
                 &imap
                     .local_addr()
-                    .expect("应能读取 IMAP 地址")
+                    .expect("搴旇兘璇诲彇 IMAP 鍦板潃")
                     .port()
                     .to_string(),
                 "--imap-security",
@@ -926,7 +1316,7 @@ mod tests {
                 "--smtp-port",
                 &smtp
                     .local_addr()
-                    .expect("应能读取 SMTP 地址")
+                    .expect("搴旇兘璇诲彇 SMTP 鍦板潃")
                     .port()
                     .to_string(),
                 "--smtp-security",
@@ -937,7 +1327,7 @@ mod tests {
             unique_store_path(),
         )
         .expect("实时探测成功时应返回结构化结果");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
 
         assert_eq!(parsed["status"], "passed");
         assert!(
@@ -1018,7 +1408,8 @@ mod tests {
             &sync_source,
         )
         .expect("同步命令应成功");
-        let synced = serde_json::from_str::<Value>(&synced_output).expect("输出必须是合法 JSON");
+        let synced =
+            serde_json::from_str::<Value>(&synced_output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
 
         assert_eq!(synced["navigation"][3]["badge"], 1);
         assert_eq!(
@@ -1034,9 +1425,9 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("读取工作台快照应成功");
+        .expect("璇诲彇宸ヤ綔鍙板揩鐓у簲鎴愬姛");
         let bootstrap =
-            serde_json::from_str::<Value>(&bootstrap_output).expect("输出必须是合法 JSON");
+            serde_json::from_str::<Value>(&bootstrap_output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
 
         assert_eq!(
             bootstrap["message_groups"][0]["items"][1]["account_name"],
@@ -1044,7 +1435,7 @@ mod tests {
         );
         assert!(
             workspace_store_path.exists(),
-            "同步完成后必须把快照持久化到本地缓存"
+            "鍚屾瀹屾垚鍚庡繀椤绘妸蹇収鎸佷箙鍖栧埌鏈湴缂撳瓨"
         );
     }
 
@@ -1054,7 +1445,7 @@ mod tests {
             ["workspace", "bootstrap", "--format", "yaml"],
             unique_store_path(),
         )
-        .expect_err("不支持的格式必须报错");
+        .expect_err("涓嶆敮鎸佺殑鏍煎紡蹇呴』鎶ラ敊");
 
         assert_eq!(
             error,
@@ -1071,8 +1462,10 @@ mod tests {
             unique_store_path(),
         )
         .expect("读取邮箱列表应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
-        let mailboxes = parsed.as_array().expect("邮箱列表输出应该是 JSON 数组");
+        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        let mailboxes = parsed
+            .as_array()
+            .expect("閭鍒楄〃杈撳嚭搴旇鏄?JSON 鏁扮粍");
 
         assert_eq!(mailboxes.len(), 3);
         assert!(mailboxes.iter().any(|mailbox| {
@@ -1155,14 +1548,386 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("按账号与邮箱筛选消息应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
-        let messages = parsed.as_array().expect("消息列表输出应该是 JSON 数组");
+        .expect("鎸夎处鍙蜂笌閭绛涢€夋秷鎭簲鎴愬姛");
+        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        let messages = parsed
+            .as_array()
+            .expect("娑堟伅鍒楄〃杈撳嚭搴旇鏄?JSON 鏁扮粍");
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["id"], "msg_notion_welcome");
         assert_eq!(messages[0]["mailbox_label"], "Spam/Junk");
         assert_eq!(messages[0]["account_id"], "acct_primary-example-com");
+    }
+
+    #[test]
+    fn message_list_supports_category_and_query_filters() {
+        let output = run_with_args_and_test_store(
+            [
+                "message",
+                "list",
+                "--category",
+                "security",
+                "--query",
+                "362149",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("分类和查询筛选应成功");
+        let parsed =
+            serde_json::from_str::<Value>(&output).expect("鏉堟挸鍤箛鍛淬€忛弰顖氭値濞?JSON");
+        let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], "msg_github_security");
+    }
+
+    #[test]
+    fn message_list_supports_exact_site_filter() {
+        let output = run_with_args_and_test_store(
+            [
+                "message",
+                "list",
+                "--site",
+                "github.com",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("閹稿鐝悙鍦翱绾喛绻冨銈嗙Х閹垰绨查幋鎰");
+        let parsed = serde_json::from_str::<Value>(&output)
+            .expect("閺夊牊鎸搁崵顓＄疀閸涙番鈧繘寮伴姘€ゆ繛?JSON");
+        let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], "msg_github_security");
+    }
+
+    #[test]
+    fn site_context_resolve_returns_exact_match_and_candidates() {
+        let exact_output = run_with_args_and_test_store(
+            [
+                "site-context",
+                "resolve",
+                "--domain",
+                "https://www.github.com/login",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("缁旀瑧鍋ｇ划鍓р€橀崠褰掑帳閸涙垝鎶ゆ惔鏃€鍨氶崝?");
+        let exact = serde_json::from_str::<Value>(&exact_output)
+            .expect("閺夊牊鎸搁崵顓＄疀閸涙番鈧繘寮伴姘€ゆ繛?JSON");
+        let candidate_output = run_with_args_and_test_store(
+            [
+                "site-context",
+                "resolve",
+                "--domain",
+                "lin",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("閸婃瑩鈧鐝悙纭呅掗弸鎰嚒娴犮倕绨查幋鎰");
+        let candidate = serde_json::from_str::<Value>(&candidate_output)
+            .expect("閺夊牊鎸搁崵顓＄疀閸涙番鈧繘寮伴姘€ゆ繛?JSON");
+
+        assert_eq!(exact["normalized_domain"], "github.com");
+        assert_eq!(exact["matched_site"]["hostname"], "github.com");
+        assert_eq!(candidate["matched_site"], Value::Null);
+        assert_eq!(candidate["candidate_sites"][0]["hostname"], "linear.app");
+    }
+
+    #[test]
+    fn message_list_supports_recent_hours_filter() {
+        let repository = JsonFileAccountRepository::new(unique_store_path());
+        let workspace_store_path = unique_workspace_store_path();
+        let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+        let seed_snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/data/workspace-bootstrap.json");
+        let mut snapshot = serde_json::from_str::<Value>(
+            &fs::read_to_string(&seed_snapshot_path).expect("seed snapshot 鎼存棁顕氶崣顖濐嚢"),
+        )
+        .expect("seed snapshot 韫囧懘銆忛弰顖氭値濞?JSON");
+
+        snapshot["generated_at"] = Value::String("2026-04-05T09:00:00Z".to_string());
+        snapshot["message_groups"][0]["items"][0]["received_at"] =
+            Value::String("2026-04-01T08:58:00Z".to_string());
+        snapshot["message_details"][0]["received_at"] =
+            Value::String("2026-04-01T08:58:00Z".to_string());
+
+        fs::create_dir_all(
+            workspace_store_path
+                .parent()
+                .expect("workspace 璺緞搴斿寘鍚埗鐩綍"),
+        )
+        .expect("娴嬭瘯鐩綍搴斿彲鍒涘缓");
+        fs::write(
+            &workspace_store_path,
+            serde_json::to_string_pretty(&snapshot).expect("快照 JSON 应可序列化"),
+        )
+        .expect("娴嬭瘯蹇収搴斿彲鍐欏叆");
+
+        let output = run_with_args_and_dependencies(
+            [
+                "message",
+                "list",
+                "--verification-only",
+                "true",
+                "--recent-hours",
+                "48",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("recent-hours 缁涙盯鈧绨查幋鎰");
+        let parsed = serde_json::from_str::<Value>(&output)
+            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+        let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], "msg_linear_verify");
+    }
+
+    #[test]
+    fn message_action_marks_processed_and_removes_matching_extract() {
+        let output = run_with_args_and_test_store(
+            [
+                "message",
+                "action",
+                "--id",
+                "msg_github_security",
+                "--action",
+                "copy_code",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("楂樹环鍊煎姩浣滃懡浠ゅ簲鎴愬姛");
+        let parsed =
+            serde_json::from_str::<Value>(&output).expect("鍛戒护杈撳嚭蹇呴』鏄悎娉?JSON");
+
+        assert_eq!(parsed["action"], "copy_code");
+        assert_eq!(parsed["copied_value"], "362149");
+        assert_eq!(
+            parsed["snapshot"]["selected_message"]["status"],
+            "processed"
+        );
+        assert!(
+            parsed["snapshot"]["extracts"]
+                .as_array()
+                .is_some_and(|items| items.iter().all(|item| item["id"] != "extract_github_code"))
+        );
+    }
+
+    #[test]
+    fn message_open_marks_it_read_and_returns_updated_snapshot() {
+        let output = run_with_args_and_test_store(
+            [
+                "message",
+                "open",
+                "--id",
+                "msg_github_security",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("open message 閸涙垝鎶ゆ惔鏃€鍨氶崝?");
+        let parsed = serde_json::from_str::<Value>(&output)
+            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+
+        assert_eq!(parsed["detail"]["id"], "msg_github_security");
+        assert_eq!(parsed["detail"]["read_state"], "read");
+        assert_eq!(parsed["snapshot"]["selected_message"]["status"], "pending");
+    }
+
+    #[test]
+    fn message_original_returns_original_url_and_marks_message_read() {
+        let output = run_with_args_and_test_store(
+            [
+                "message",
+                "original",
+                "--id",
+                "msg_linear_verify",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("open original 閸涙垝鎶ゆ惔鏃€鍨氶崝?");
+        let parsed = serde_json::from_str::<Value>(&output)
+            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+
+        assert!(
+            parsed["original_url"]
+                .as_str()
+                .is_some_and(|url| url.contains("msg_linear_verify"))
+        );
+        assert_eq!(
+            parsed["snapshot"]["message_details"][1]["read_state"],
+            "read"
+        );
+    }
+
+    #[test]
+    fn site_context_confirm_adds_manual_site_to_snapshot() {
+        let output = run_with_args_and_test_store(
+            [
+                "site-context",
+                "confirm",
+                "--domain",
+                "https://vercel.com/login",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("confirm site 閸涙垝鎶ゆ惔鏃€鍨氶崝?");
+        let parsed = serde_json::from_str::<Value>(&output)
+            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+
+        assert!(
+            parsed["site_summaries"]
+                .as_array()
+                .is_some_and(|sites| sites.iter().any(|site| site["hostname"] == "vercel.com"))
+        );
+    }
+
+    #[test]
+    fn message_mark_updates_snapshot_and_persists_status_change() {
+        let account_store_path = unique_store_path();
+        let workspace_store_path = unique_workspace_store_path();
+        let repository = JsonFileAccountRepository::new(account_store_path);
+        let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+
+        let output = run_with_args_and_dependencies(
+            [
+                "message",
+                "mark",
+                "--id",
+                "msg_github_security",
+                "--status",
+                "processed",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("閺嶅洩顔囧鎻掝槱閻炲棗绨查幋鎰");
+        let parsed =
+            serde_json::from_str::<Value>(&output).expect("鏉堟挸鍤箛鍛淬€忛弰顖氭値濞?JSON");
+
+        assert_eq!(parsed["selected_message"]["status"], "processed");
+        assert_eq!(
+            parsed["site_summaries"].as_array().and_then(|sites| {
+                sites
+                    .iter()
+                    .find(|site| site["hostname"] == "github.com")
+                    .and_then(|site| site["pending_count"].as_u64())
+            }),
+            Some(0)
+        );
+
+        let persisted_output = run_with_args_and_dependencies(
+            [
+                "message",
+                "read",
+                "--id",
+                "msg_github_security",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("鎼存棁顕氶懗鍊燁嚢閸掓澘鍑￠弴瀛樻煀閻ㄥ嫮绱︾€涙濮搁幀?");
+        let persisted = serde_json::from_str::<Value>(&persisted_output)
+            .expect("鏉堟挸鍤箛鍛淬€忛弰顖氭値濞?JSON");
+
+        assert_eq!(persisted["status"], "processed");
+        assert!(workspace_store_path.exists());
+    }
+
+    #[test]
+    fn message_read_state_updates_snapshot_and_persists_read_flag() {
+        let account_store_path = unique_store_path();
+        let workspace_store_path = unique_workspace_store_path();
+        let repository = JsonFileAccountRepository::new(account_store_path);
+        let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+
+        let output = run_with_args_and_dependencies(
+            [
+                "message",
+                "read-state",
+                "--id",
+                "msg_github_security",
+                "--state",
+                "read",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("更新消息已读状态应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("消息快照输出应为 JSON");
+
+        assert_eq!(parsed["selected_message"]["read_state"], "read");
+        assert_eq!(parsed["selected_message"]["status"], "pending");
+
+        let persisted_output = run_with_args_and_dependencies(
+            [
+                "message",
+                "read",
+                "--id",
+                "msg_github_security",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("读取持久化消息详情应成功");
+        let persisted =
+            serde_json::from_str::<Value>(&persisted_output).expect("消息详情输出应为 JSON");
+
+        assert_eq!(persisted["read_state"], "read");
+        assert_eq!(persisted["status"], "pending");
+        assert!(workspace_store_path.exists());
     }
 
     #[test]
@@ -1179,7 +1944,7 @@ mod tests {
             unique_store_path(),
         )
         .expect("读取缓存消息详情应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("输出必须是合法 JSON");
+        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
 
         assert_eq!(parsed["id"], "msg_linear_verify");
         assert_eq!(parsed["site_hint"], "linear.app");
@@ -1190,7 +1955,7 @@ mod tests {
     fn unique_store_path() -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("系统时间应晚于 epoch")
+            .expect("绯荤粺鏃堕棿搴旀櫄浜?epoch")
             .as_nanos();
 
         std::env::temp_dir()
@@ -1201,7 +1966,7 @@ mod tests {
     fn unique_workspace_store_path() -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("系统时间应晚于 epoch")
+            .expect("绯荤粺鏃堕棿搴旀櫄浜?epoch")
             .as_nanos();
 
         std::env::temp_dir()
@@ -1210,8 +1975,11 @@ mod tests {
     }
 
     fn reserve_unused_port() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("应能分配空闲端口");
-        let port = listener.local_addr().expect("应能读取本地地址").port();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("搴旇兘鍒嗛厤绌洪棽绔彛");
+        let port = listener
+            .local_addr()
+            .expect("搴旇兘璇诲彇鏈湴鍦板潃")
+            .port();
         drop(listener);
         port
     }

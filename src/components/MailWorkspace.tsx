@@ -21,11 +21,21 @@ import {
 } from "react";
 import workspaceBootstrap from "../data/workspace-bootstrap.json";
 import type {
+  WorkspaceMessageAction,
+  MessageReadState,
+  MessageStatus,
   WorkspaceBootstrapSnapshot,
   WorkspaceExtractItem,
+  WorkspaceMessageDetail,
   WorkspaceMessageItem,
   WorkspaceSiteSummary,
 } from "../lib/app-types";
+import {
+  DEFAULT_VERIFICATION_RECENT_HOURS,
+  buildWorkspaceMessageFilter,
+  filterWorkspaceMessages,
+  type WorkspaceMessageCategoryFilter,
+} from "../lib/workspace-reading";
 import type { WorkspaceCategory } from "../lib/workspace-view";
 import { getWorkspaceTitle } from "../lib/workspace-view";
 import { getCircularAvatarMetrics } from "./extract-geometry";
@@ -41,6 +51,23 @@ const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   month: "2-digit",
   day: "2-digit",
 });
+
+const detailDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const messageCategoryOptions: {
+  value: WorkspaceMessageCategoryFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "全部" },
+  { value: "registration", label: "注册" },
+  { value: "security", label: "安全" },
+  { value: "marketing", label: "营销" },
+];
 
 function CircularProgressAvatar({
   name,
@@ -98,10 +125,12 @@ function CircularProgressAvatar({
 function ExtractCard({
   item,
   onOpenLink,
+  onAction,
   onRemove,
 }: {
   item: WorkspaceExtractItem;
   onOpenLink: (url: string) => Promise<void> | void;
+  onAction?: () => Promise<void> | void;
   onRemove: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -179,10 +208,12 @@ function ExtractCard({
         setCopied(false);
         resetCopiedTimer.current = null;
       }, 2000);
+      await onAction?.();
       return;
     }
 
     await onOpenLink(item.value);
+    await onAction?.();
   };
 
   const handleShellBlur = (event: FocusEvent<HTMLDivElement>) => {
@@ -290,6 +321,21 @@ interface MailWorkspaceProps {
   category: WorkspaceCategory;
   snapshot?: WorkspaceBootstrapSnapshot;
   accountsView?: ReactNode;
+  messages?: WorkspaceMessageItem[];
+  selectedMessage?: WorkspaceMessageDetail | null;
+  selectedMessageId?: string | null;
+  isReadingLoading?: boolean;
+  messageError?: string | null;
+  messageCategoryFilter?: WorkspaceMessageCategoryFilter;
+  showOlderVerificationMessages?: boolean;
+  onMessageCategoryChange?: (value: WorkspaceMessageCategoryFilter) => void;
+  onMessageAction?: (action: WorkspaceMessageAction) => Promise<void> | void;
+  onMessageReadStateChange?: (readState: MessageReadState) => Promise<void> | void;
+  onMessageStatusChange?: (status: MessageStatus) => void;
+  onMessageSelect?: (messageId: string) => void;
+  onOpenOriginalMessage?: () => Promise<void> | void;
+  onToggleVerificationWindow?: () => void;
+  onExtractAction?: (item: WorkspaceExtractItem) => Promise<void> | void;
   onOpenVerificationLink?: (url: string) => Promise<void> | void;
 }
 
@@ -297,6 +343,21 @@ export function MailWorkspace({
   category,
   snapshot = fallbackWorkspaceSnapshot,
   accountsView,
+  messages,
+  selectedMessage,
+  selectedMessageId = null,
+  isReadingLoading = false,
+  messageError = null,
+  messageCategoryFilter = "all",
+  showOlderVerificationMessages = false,
+  onMessageCategoryChange,
+  onMessageAction,
+  onMessageReadStateChange,
+  onMessageStatusChange,
+  onMessageSelect,
+  onOpenOriginalMessage,
+  onToggleVerificationWindow,
+  onExtractAction,
   onOpenVerificationLink,
 }: MailWorkspaceProps) {
   const [extracts, setExtracts] = useState(snapshot.extracts);
@@ -336,7 +397,6 @@ export function MailWorkspace({
     });
   };
 
-  const visibleMessages = getVisibleMessages(snapshot, category);
   const title = getWorkspaceTitle(category);
   const openLink =
     onOpenVerificationLink ??
@@ -370,7 +430,19 @@ export function MailWorkspace({
     );
   }
 
+  const resolvedMessages = messages ?? getVisibleMessages(snapshot, category);
+  const resolvedSelectedMessage =
+    selectedMessage ??
+    (resolvedMessages.some((message) => message.id === snapshot.selected_message.id)
+      ? snapshot.selected_message
+      : null);
   const showExtracts = category === "verifications" && extracts.length > 0;
+  const emptyTitle =
+    category === "verifications" ? "没有匹配的验证邮件" : "没有匹配的收件箱邮件";
+  const emptyDescription =
+    category === "verifications"
+      ? "可以换一个关键字，或切回“全部”分类看看更早的验证消息。"
+      : "可以尝试更短的关键字，或切换到其他分类查看同步结果。";
 
   return (
     <div className="workspace-content">
@@ -390,6 +462,7 @@ export function MailWorkspace({
               <ExtractCard
                 key={item.id}
                 item={item}
+                onAction={() => onExtractAction?.(item)}
                 onOpenLink={openLink}
                 onRemove={() =>
                   setExtracts((current) =>
@@ -411,26 +484,124 @@ export function MailWorkspace({
         </div>
       ) : null}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <div className="workspace-title-row">
-          <Text style={{ fontWeight: 600, fontSize: "18px" }}>{title}</Text>
+          <div className="workspace-title-stack">
+            <Text style={{ fontWeight: 600, fontSize: "18px" }}>{title}</Text>
+            <Text className="workspace-subtitle">
+              {category === "verifications"
+              ? "优先显示验证码、验证链接和需要立刻处理的安全邮件。"
+              : "按统一工作台查看最近同步到本地缓存的邮件。"}
+            </Text>
+          </div>
+          <Text className="workspace-count-label">{resolvedMessages.length} 封</Text>
         </div>
 
-        <div className="mail-list">
-          {visibleMessages.map((mail) => (
-            <MessageCard key={mail.id} message={mail} />
-          ))}
+      <div className="message-filter-row">
+        {messageCategoryOptions.map((option) => {
+          const isActive = messageCategoryFilter === option.value;
+
+          return (
+            <button
+              key={option.value}
+              className={`message-filter-chip ${isActive ? "active" : ""}`}
+              type="button"
+              onClick={() => onMessageCategoryChange?.(option.value)}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {category === "verifications" ? (
+        <div className="workspace-reading-scope">
+          <Text className="workspace-reading-scope-label">
+            {showOlderVerificationMessages
+              ? "已包含更早验证邮件"
+              : `最近 ${DEFAULT_VERIFICATION_RECENT_HOURS} 小时`}
+          </Text>
+          <button
+            className="workspace-reading-scope-button"
+            disabled={!onToggleVerificationWindow}
+            type="button"
+            onClick={() => onToggleVerificationWindow?.()}
+          >
+            {showOlderVerificationMessages
+              ? `仅看最近 ${DEFAULT_VERIFICATION_RECENT_HOURS} 小时`
+              : "查看更早邮件"}
+          </button>
         </div>
+      ) : null}
+
+      <div className="reading-layout">
+        <section className="reading-list-panel">
+          {messageError ? (
+            <div className="workspace-inline-alert error">{messageError}</div>
+          ) : null}
+          {isReadingLoading && resolvedMessages.length > 0 ? (
+            <Text className="workspace-loading-label">正在刷新结果…</Text>
+          ) : null}
+          {resolvedMessages.length === 0 ? (
+            <EmptyWorkspaceState
+              description={emptyDescription}
+              heading={isReadingLoading ? "正在读取邮件…" : emptyTitle}
+            />
+          ) : (
+            <div className="mail-list">
+              {resolvedMessages.map((message) => (
+                <MessageCard
+                  key={message.id}
+                  isSelected={message.id === selectedMessageId}
+                  message={message}
+                  onSelect={() => onMessageSelect?.(message.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <aside className="reading-detail-panel">
+          {resolvedSelectedMessage ? (
+            <MessageDetailCard
+              isActionLoading={isReadingLoading}
+              message={resolvedSelectedMessage}
+              onMessageAction={onMessageAction}
+              onMessageReadStateChange={onMessageReadStateChange}
+              onOpenOriginalMessage={onOpenOriginalMessage}
+              onOpenVerificationLink={openLink}
+              onUpdateStatus={onMessageStatusChange}
+            />
+          ) : (
+            <EmptyWorkspaceState
+              description="列表结果出来后，点开一封邮件就可以直接查看摘要、正文和验证码动作。"
+              heading="选择一封邮件开始阅读"
+            />
+          )}
+        </aside>
       </div>
     </div>
   );
 }
 
-function MessageCard({ message }: { message: WorkspaceMessageItem }) {
-  const isUnread = message.status === "pending";
+function MessageCard({
+  message,
+  isSelected,
+  onSelect,
+}: {
+  message: WorkspaceMessageItem;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const isUnread = message.read_state === "unread";
 
   return (
-    <div className={`mail-item ${isUnread ? "unread" : "read"}`}>
+    <button
+      className={`mail-item ${isUnread ? "unread" : "read"} ${
+        isSelected ? "selected" : ""
+      }`}
+      type="button"
+      onClick={onSelect}
+    >
       <div className="mail-item-leading">
         <span className="mail-item-checkbox" aria-hidden="true">
           <CheckboxUncheckedRegular fontSize={18} />
@@ -480,6 +651,150 @@ function MessageCard({ message }: { message: WorkspaceMessageItem }) {
           <StarRegular fontSize={18} />
         </span>
       </div>
+    </button>
+  );
+}
+
+function MessageDetailCard({
+  isActionLoading = false,
+  message,
+  onMessageAction,
+  onMessageReadStateChange,
+  onOpenOriginalMessage,
+  onOpenVerificationLink,
+  onUpdateStatus,
+}: {
+  isActionLoading?: boolean;
+  message: WorkspaceMessageDetail;
+  onMessageAction?: (action: WorkspaceMessageAction) => Promise<void> | void;
+  onMessageReadStateChange?: (readState: MessageReadState) => Promise<void> | void;
+  onOpenOriginalMessage?: () => Promise<void> | void;
+  onOpenVerificationLink: (url: string) => Promise<void> | void;
+  onUpdateStatus?: (status: MessageStatus) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyCode = async () => {
+    if (!message.extracted_code) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(message.extracted_code);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+    await onMessageAction?.("copy_code");
+  };
+
+  const handleOpenVerificationLink = async () => {
+    if (!message.verification_link) {
+      return;
+    }
+
+    await onOpenVerificationLink(message.verification_link);
+    await onMessageAction?.("open_link");
+  };
+
+  return (
+    <div className="message-detail-card">
+      <div className="message-detail-header">
+        <div className="message-detail-heading">
+          <Text className="message-detail-subject">{message.subject}</Text>
+          <div className="message-detail-badges">
+            <Badge appearance="tint">{getMessageStatusLabel(message.status)}</Badge>
+            <Badge appearance="outline">{getMessageCategoryLabel(message.category)}</Badge>
+          </div>
+        </div>
+        <Text className="message-detail-meta">
+          {message.sender} · {message.account_name} · {message.mailbox_label}
+        </Text>
+        <Text className="message-detail-meta">
+          收到于 {detailDateFormatter.format(new Date(message.received_at))}
+        </Text>
+      </div>
+
+      <div className="message-detail-actions">
+        {message.extracted_code ? (
+          <button
+            className="message-detail-action"
+            disabled={isActionLoading}
+            type="button"
+            onClick={() => void handleCopyCode()}
+          >
+            {copied ? "已复制验证码" : `复制验证码 ${message.extracted_code}`}
+          </button>
+        ) : null}
+        {message.verification_link ? (
+          <button
+            className="message-detail-action secondary"
+            disabled={isActionLoading}
+            type="button"
+            onClick={() => void handleOpenVerificationLink()}
+          >
+            打开验证链接
+          </button>
+        ) : null}
+        {message.original_message_url ? (
+          <button
+            className="message-detail-action secondary"
+            disabled={isActionLoading}
+            type="button"
+            onClick={() => void onOpenOriginalMessage?.()}
+          >
+            打开原始邮件
+          </button>
+        ) : null}
+        <button
+          className="message-detail-action secondary"
+          disabled={isActionLoading}
+          type="button"
+          onClick={() =>
+            void onMessageReadStateChange?.(
+              message.read_state === "unread" ? "read" : "unread",
+            )
+          }
+        >
+          {message.read_state === "unread" ? "标记已读" : "标记未读"}
+        </button>
+        <button
+          className="message-detail-action secondary"
+          disabled={isActionLoading}
+          type="button"
+          onClick={() =>
+            onUpdateStatus?.(
+              message.status === "pending" ? "processed" : "pending",
+            )
+          }
+        >
+          {message.status === "pending" ? "标记已处理" : "撤销已处理"}
+        </button>
+      </div>
+
+      <div className="message-detail-section">
+        <Text className="message-detail-section-title">摘要</Text>
+        <Text className="message-detail-summary">{message.summary}</Text>
+      </div>
+
+      <div className="message-detail-section">
+        <Text className="message-detail-section-title">正文</Text>
+        <div className="message-detail-body">
+          {message.body_text?.trim() || "当前消息只缓存了摘要，还没有完整正文。"}
+        </div>
+      </div>
+
+      <div className="message-detail-footer">
+        <div className="message-detail-footnote">
+          <Text className="message-detail-footnote-label">站点提示</Text>
+          <Text>{message.site_hint}</Text>
+        </div>
+        <div className="message-detail-footnote">
+          <Text className="message-detail-footnote-label">正文状态</Text>
+          <Text>{message.prefetched_body ? "已预抓取" : "仅元数据"}</Text>
+        </div>
+        <div className="message-detail-footnote">
+          <Text className="message-detail-footnote-label">同步时间</Text>
+          <Text>{detailDateFormatter.format(new Date(message.synced_at))}</Text>
+        </div>
+      </div>
     </div>
   );
 }
@@ -492,29 +807,62 @@ function SiteCard({ site }: { site: WorkspaceSiteSummary }) {
           <Text className="site-card-title">{site.label}</Text>
           <Text className="site-card-subtitle">{site.hostname}</Text>
         </div>
-        <Badge appearance="tint">
-          待处理 {site.pending_count}
-        </Badge>
+        <Badge appearance="tint">待处理 {site.pending_count}</Badge>
       </div>
       <Text className="site-card-body">
-        最近一次来自 {site.latest_sender}，可以直接回到验证列表继续处理。
+        最近一封来自 {site.latest_sender}，可以直接回到验证列表继续处理。
       </Text>
     </div>
   );
+}
+
+function EmptyWorkspaceState({
+  heading,
+  description,
+}: {
+  heading: string;
+  description: string;
+}) {
+  return (
+    <div className="workspace-empty-state">
+      <Text className="workspace-empty-title">{heading}</Text>
+      <Text className="workspace-empty-description">{description}</Text>
+    </div>
+  );
+}
+
+function getMessageStatusLabel(status: WorkspaceMessageDetail["status"]) {
+  return status === "pending" ? "待处理" : "已处理";
+}
+
+function getMessageCategoryLabel(category: WorkspaceMessageDetail["category"]) {
+  if (category === "registration") {
+    return "注册";
+  }
+
+  if (category === "security") {
+    return "安全";
+  }
+
+  return "营销";
 }
 
 function getVisibleMessages(
   snapshot: WorkspaceBootstrapSnapshot,
   category: WorkspaceCategory,
 ) {
-  const messages = snapshot.message_groups.flatMap((group) => group.items);
-
   if (category === "verifications") {
-    return messages.filter((message) => message.has_code || message.has_link);
+    return filterWorkspaceMessages(
+      snapshot,
+      buildWorkspaceMessageFilter("verifications", "all", ""),
+    );
   }
 
   if (category === "inbox") {
-    return messages;
+    return filterWorkspaceMessages(
+      snapshot,
+      buildWorkspaceMessageFilter("inbox", "all", ""),
+    );
   }
 
   return [];

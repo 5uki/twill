@@ -1,6 +1,6 @@
 {
   "app_name": "Twill",
-  "generated_at": "2026-03-29T09:00:00Z",
+  "generated_at": "2026-04-05T09:00:00Z",
   "default_view": "recent_verification",
   "navigation": [
     {
@@ -69,14 +69,15 @@
           "account_name": "Primary Gmail",
           "mailbox_id": "seed_primary-gmail/inbox",
           "mailbox_label": "Inbox",
-          "received_at": "2026-03-29T08:58:00Z",
+          "received_at": "2026-04-05T08:58:00Z",
           "category": "security",
           "status": "pending",
+          "read_state": "unread",
           "has_code": true,
           "has_link": false,
           "preview": "你的 GitHub 登录验证码是 362149。",
           "prefetched_body": true,
-          "synced_at": "2026-03-29T09:00:00Z"
+          "synced_at": "2026-04-05T09:00:00Z"
         },
         {
           "id": "msg_linear_verify",
@@ -86,14 +87,15 @@
           "account_name": "Work Outlook",
           "mailbox_id": "seed_work-outlook/inbox",
           "mailbox_label": "Inbox",
-          "received_at": "2026-03-29T08:41:00Z",
+          "received_at": "2026-04-05T08:41:00Z",
           "category": "registration",
           "status": "pending",
+          "read_state": "unread",
           "has_code": false,
           "has_link": true,
           "preview": "点击邮件中的安全链接完成登录。",
           "prefetched_body": true,
-          "synced_at": "2026-03-29T09:00:00Z"
+          "synced_at": "2026-04-05T09:00:00Z"
         }
       ]
     },
@@ -109,14 +111,15 @@
           "account_name": "Primary Gmail",
           "mailbox_id": "seed_primary-gmail/spam-junk",
           "mailbox_label": "Spam/Junk",
-          "received_at": "2026-03-29T07:12:00Z",
+          "received_at": "2026-04-02T07:12:00Z",
           "category": "marketing",
           "status": "processed",
+          "read_state": "read",
           "has_code": false,
           "has_link": true,
           "preview": "已完成注册，可继续打开欢迎链接。",
           "prefetched_body": true,
-          "synced_at": "2026-03-29T09:00:00Z"
+          "synced_at": "2026-04-05T09:00:00Z"
         }
       ]
     }
@@ -129,16 +132,18 @@
     "account_name": "Primary Gmail",
     "mailbox_id": "seed_primary-gmail/inbox",
     "mailbox_label": "Inbox",
-    "received_at": "2026-03-29T08:58:00Z",
+    "received_at": "2026-04-05T08:58:00Z",
     "category": "security",
     "status": "pending",
+    "read_state": "unread",
     "site_hint": "github.com",
     "summary": "这是工作台静态预览快照，用于浏览器预览和桌面端缓存回退。",
     "extracted_code": "362149",
     "verification_link": "https://github.com/login/device",
+    "original_message_url": "https://mail.google.com/mail/u/0/#inbox/msg_github_security",
     "body_text": "GitHub 安全验证码\n\n这是工作台静态预览快照，用于浏览器预览和桌面端缓存回退。",
     "prefetched_body": true,
-    "synced_at": "2026-03-29T09:00:00Z"
+    "synced_at": "2026-04-05T09:00:00Z"
   },
   "message_details": [
     {
@@ -149,16 +154,18 @@
       "account_name": "Primary Gmail",
       "mailbox_id": "seed_primary-gmail/inbox",
       "mailbox_label": "Inbox",
-      "received_at": "2026-03-29T08:58:00Z",
+      "received_at": "2026-04-05T08:58:00Z",
       "category": "security",
       "status": "pending",
+      "read_state": "unread",
       "site_hint": "github.com",
       "summary": "你的 GitHub 登录验证码是 362149。",
       "extracted_code": "362149",
       "verification_link": "https://github.com/login/device",
+      "original_message_url": "https://mail.google.com/mail/u/0/#inbox/msg_github_security",
       "body_text": "GitHub 安全验证码\n\n你的 GitHub 登录验证码是 362149。",
       "prefetched_body": true,
-      "synced_at": "2026-03-29T09:00:00Z"
+      "synced_at": "2026-04-05T09:00:00Z"
     },
     {
       "id": "msg_linear_verify",
@@ -168,16 +175,18 @@
       "account_name": "Work Outlook",
       "mailbox_id": "seed_work-outlook/inbox",
       "mailbox_label": "Inbox",
-      "received_at": "2026-03-29T08:41:00Z",
+      "received_at": "2026-04-05T08:41:00Z",
       "category": "registration",
       "status": "pending",
+      "read_state": "unread",
       "site_hint": "linear.app",
       "summary": "点击邮件中的安全链接完成登录。",
       "extracted_code": null,
       "verification_link": "https://linear.app/login",
+      "original_message_url": "https://outlook.office.com/mail/id/msg_linear_verify",
       "body_text": "Linear 验证链接\n\n点击邮件中的安全链接完成登录。",
       "prefetched_body": true,
-      "synced_at": "2026-03-29T09:00:00Z"
+      "synced_at": "2026-04-05T09:00:00Z"
     },
     {
       "id": "msg_notion_welcome",
@@ -187,16 +196,18 @@
       "account_name": "Primary Gmail",
       "mailbox_id": "seed_primary-gmail/spam-junk",
       "mailbox_label": "Spam/Junk",
-      "received_at": "2026-03-29T07:12:00Z",
+      "received_at": "2026-04-02T07:12:00Z",
       "category": "marketing",
       "status": "processed",
+      "read_state": "read",
       "site_hint": "notion.so",
       "summary": "已完成注册，可继续打开欢迎链接。",
       "extracted_code": null,
       "verification_link": "https://www.notion.so",
+      "original_message_url": "https://mail.google.com/mail/u/0/#spam/msg_notion_welcome",
       "body_text": "Notion 注册确认\n\n已完成注册，可继续打开欢迎链接。",
       "prefetched_body": true,
-      "synced_at": "2026-03-29T09:00:00Z"
+      "synced_at": "2026-04-05T09:00:00Z"
     }
   ],
   "extracts": [

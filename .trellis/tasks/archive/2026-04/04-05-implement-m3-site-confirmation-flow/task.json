@@ -1,0 +1,44 @@
+{
+  "id": "implement-m3-site-confirmation-flow",
+  "name": "implement-m3-site-confirmation-flow",
+  "title": "implement: M3 site confirmation flow",
+  "description": "补齐 M3 当前站点后的确认动作：支持将手动输入的站点加入站点清单，并贯通 CLI / Tauri / 前端头部确认入口。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-05",
+  "completedAt": "2026-04-05",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [],
+  "notes": "已完成 site-context confirm CLI/Tauri 入口、TopHeader 加入网站清单按钮、App 站点确认回写，以及 CLI 实跑与前端构建验证。",
+  "meta": {}
+}

@@ -9,6 +9,8 @@ export type WorkspaceViewId =
   | "accounts";
 export type MessageCategory = "registration" | "security" | "marketing";
 export type MessageStatus = "pending" | "processed";
+export type MessageReadState = "unread" | "read";
+export type WorkspaceMessageAction = "copy_code" | "open_link";
 export type WorkspaceExtractKind = "code" | "link";
 export type WorkspaceSyncState = "ready";
 export type WorkspaceSyncPhase = "first" | "incremental";
@@ -59,6 +61,7 @@ export interface WorkspaceMessageItem {
   received_at: string;
   category: MessageCategory;
   status: MessageStatus;
+  read_state: MessageReadState;
   has_code: boolean;
   has_link: boolean;
   preview: string;
@@ -83,13 +86,25 @@ export interface WorkspaceMessageDetail {
   received_at: string;
   category: MessageCategory;
   status: MessageStatus;
+  read_state: MessageReadState;
   site_hint: string;
   summary: string;
   extracted_code: string | null;
   verification_link: string | null;
+  original_message_url?: string | null;
   body_text?: string | null;
   prefetched_body: boolean;
   synced_at: string;
+}
+
+export interface WorkspaceMessageFilter {
+  account_id?: string | null;
+  mailbox_kind?: WorkspaceMailboxKind | null;
+  verification_only?: boolean;
+  category?: MessageCategory | null;
+  site_hint?: string | null;
+  query?: string | null;
+  recent_hours?: number | null;
 }
 
 export interface WorkspaceExtractItem {
@@ -108,6 +123,32 @@ export interface WorkspaceSiteSummary {
   hostname: string;
   pending_count: number;
   latest_sender: string;
+}
+
+export interface WorkspaceSiteContextResolution {
+  input: string;
+  normalized_domain?: string | null;
+  matched_site?: WorkspaceSiteSummary | null;
+  candidate_sites: WorkspaceSiteSummary[];
+}
+
+export interface WorkspaceMessageActionResult {
+  action: WorkspaceMessageAction;
+  message_id: string;
+  copied_value?: string | null;
+  opened_url?: string | null;
+  snapshot: WorkspaceBootstrapSnapshot;
+}
+
+export interface WorkspaceMessageOpenResult {
+  detail: WorkspaceMessageDetail;
+  snapshot: WorkspaceBootstrapSnapshot;
+}
+
+export interface WorkspaceMessageOriginalOpenResult {
+  message_id: string;
+  original_url: string;
+  snapshot: WorkspaceBootstrapSnapshot;
 }
 
 export interface WorkspaceSyncStatus {

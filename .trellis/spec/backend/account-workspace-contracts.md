@@ -139,6 +139,61 @@ testAccountConnection(
 - `bun test`
   - 断言 [account-form.ts](../../../src/components/account-form.ts) 的 `login` 自动回退逻辑与 Rust 合同一致。
 
+### 6.5. M3 阅读首切片补充合同（2026-04-05）
+
+本轮在 M2 已有的缓存查询基础上，为阅读体验新增以下 **必须同步** 的合同：
+
+- Rust Tauri Command：
+  - `list_workspace_messages(filter?: WorkspaceMessageFilter) -> Result<Vec<WorkspaceMessageItem>, AppError>`
+  - `read_workspace_message(message_id: String) -> Result<WorkspaceMessageDetail, AppError>`
+- CLI：
+  - `message list --category <registration|security|marketing> --query <keyword> [--format text|json]`
+  - 仍与 `--account`、`--mailbox`、`--verification-only` 组合使用
+- 前端：
+  - `listWorkspaceMessages(filter?: WorkspaceMessageFilter): Promise<WorkspaceMessageItem[]>`
+  - `readWorkspaceMessage(messageId: string): Promise<WorkspaceMessageDetail>`
+  - 桌面端优先走 Tauri command；浏览器预览回退到共享快照，但字段名和过滤语义必须保持一致
+
+`WorkspaceMessageFilter` 当前字段：
+
+```json
+{
+  "account_id": "optional",
+  "mailbox_kind": "inbox | spam_junk | null",
+  "verification_only": true,
+  "category": "registration | security | marketing | null",
+  "query": "keyword"
+}
+```
+
+过滤语义：
+
+- `verification_only=true` 只保留 `has_code || has_link` 的消息
+- `category` 精确匹配 `WorkspaceMessageItem.category`
+- `query` 以 **大小写不敏感** 方式匹配：
+  - `subject`
+  - `sender`
+  - `preview`
+  - `account_name`
+  - `mailbox_label`
+- `read_workspace_message` / `message read` 的 `message_id` 合同继续保持不变，桌面端详情面板与 CLI 必须读取同一份 `WorkspaceMessageDetail`
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI `message list` | `--category` 非 `registration|security|marketing` | `Validation(field="category")` |
+| 桌面端 `listWorkspaceMessages()` | Tauri invoke 失败 | 前端允许回退到当前快照过滤结果，但必须显示用户可理解的错误提示 |
+
+新增最小测试要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖 `filters_messages_by_category_and_query`
+  - 覆盖 CLI `message_list_supports_category_and_query_filters`
+- `bun test`
+  - 覆盖前端本地阅读辅助逻辑对 `category/query` 的过滤
+  - 覆盖“选中消息已被过滤掉时，回退到首条可见消息”的选择语义
+
 ### 7. Wrong vs Correct
 
 #### Wrong
@@ -314,3 +369,268 @@ syncWorkspace(): Promise<WorkspaceBootstrapSnapshot>
 
 - 共享种子快照只保留一份，前后端与 seeded sync source 共用。
 - 在产品说明和任务记录里明确：当前真实的是缓存读写链路、同步命令和缓存查询入口，真实 IMAP 邮件拉取仍未交付。
+### 6.6. M3 消息处理流补充合同（2026-04-05）
+
+本轮在 M3 阅读首切片基础上，补齐“手动标记已处理 / 撤销已处理”的最小闭环。以下合同必须保持一致：
+
+- Rust Tauri Command：
+  - `update_workspace_message_status(message_id: String, status: MessageStatus) -> Result<WorkspaceBootstrapSnapshot, AppError>`
+- CLI：
+  - `message mark --id <message-id> --status <pending|processed> [--format text|json]`
+- 前端：
+  - `updateWorkspaceMessageStatus(messageId: string, status: MessageStatus): Promise<WorkspaceBootstrapSnapshot>`
+  - 浏览器预览模式使用本地 helper 回写当前 snapshot，而不是退回固定种子快照
+
+`MessageStatus` 当前只允许：
+
+```json
+"pending" | "processed"
+```
+
+状态回写语义：
+
+- `message_id` 必须命中现有消息，否则返回 `Validation(field="message.id")`
+- 状态更新必须同步作用于：
+  - `message_groups[].items[].status`
+  - `message_details[].status`
+  - `selected_message.status`
+- 状态更新后必须重建派生数据：
+  - `message_groups`
+  - `mailboxes`
+  - `site_summaries`
+- `mailboxes.unread_count` 以 `status == pending` 为准重新计算
+- `site_summaries.pending_count` 以同站点 `pending` 消息数重新计算
+- `message mark` / `update_workspace_message_status` 允许幂等调用；如果目标状态未变化，不应报错
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI `message mark` | 缺少 `--id` | `InvalidCliArgs` |
+| CLI `message mark` | 缺少 `--status` | `InvalidCliArgs` |
+| CLI `message mark` | `--status` 非 `pending|processed` | `Validation(field="status")` |
+| CLI / Tauri | `message_id` 不存在 | `Validation(field="message.id")` |
+| 前端浏览器预览 | 标记状态后再次筛选/选中 | 必须基于当前内存 snapshot，而不是重新退回初始 seed |
+
+新增最小测试要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖服务层 `updates_message_status_and_rebuilds_workspace_snapshot`
+  - 覆盖 CLI `message_mark_updates_snapshot_and_persists_status_change`
+- `bun test`
+  - 覆盖本地 helper `applyWorkspaceMessageStatus`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message mark --id msg_github_security --status processed --format json`
+  - 断言返回快照中的：
+    - `selected_message.status == "processed"`
+    - `site_summaries[github].pending_count == 0`
+
+### 6.7. M3 当前站点匹配流补充合同（2026-04-05）
+本轮补齐 M3 里“当前站点”这条最小上下文链路，要求 CLI、Tauri 与前端本地预览共享同一套域名解析和站点筛选语义。
+
+- Rust / Tauri：
+  - `resolve_workspace_site_context(input: String) -> Result<WorkspaceSiteContextResolution, AppError>`
+- CLI：
+  - `site-context resolve --domain <domain> [--format text|json]`
+  - `message list --site <hostname> [--format text|json]`
+- 前端：
+  - `resolveWorkspaceSiteContext(input: string): Promise<WorkspaceSiteContextResolution>`
+  - 本地 helper `resolveWorkspaceSiteContext(snapshot, input)`
+  - `WorkspaceMessageFilter.site_hint?: string | null`
+
+`WorkspaceSiteContextResolution` 当前合同：
+
+```json
+{
+  "input": "https://www.github.com/login",
+  "normalized_domain": "github.com",
+  "matched_site": {
+    "id": "site_github",
+    "label": "GitHub",
+    "hostname": "github.com",
+    "pending_count": 1,
+    "latest_sender": "noreply@github.com"
+  },
+  "candidate_sites": []
+}
+```
+
+解析与过滤语义：
+
+- 输入允许直接粘贴 URL，归一化后必须至少去掉：
+  - 协议头
+  - 路径 / query / hash
+  - `www.`
+  - 端口
+- `message list --site` / `WorkspaceMessageFilter.site_hint` 只做**精确站点过滤**
+- 站点过滤不依赖 `WorkspaceMessageItem` 额外字段，而是基于 `message_details[].site_hint` 与 `selected_message.site_hint` 建立消息到站点的映射
+- 精确命中时返回 `matched_site`
+- 未命中时返回排序后的 `candidate_sites`
+- 浏览器预览模式必须使用本地 helper，不能退回写死的另一套站点 mock 逻辑
+
+新增最小验证要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖 `filters_messages_by_exact_site_hint`
+  - 覆盖 `resolves_current_site_context_with_exact_match_and_candidates`
+  - 覆盖 CLI `message_list_supports_exact_site_filter`
+  - 覆盖 CLI `site_context_resolve_returns_exact_match_and_candidates`
+- `bun test`
+  - 覆盖本地 `resolveWorkspaceSiteContext`
+  - 覆盖本地 `site_hint` 精确过滤
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- site-context resolve --domain https://www.github.com/login --format json`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message list --site github.com --format json`
+
+### 6.8. M3 高价值动作自动标记补充合同（2026-04-05）
+
+本轮补齐 M3 里“复制验证码 / 打开验证链接后自动标记已处理”的闭环，要求 Rust 服务、Tauri command、CLI 与前端本地预览共享同一套动作语义。
+
+- Rust Tauri Command：
+  - `apply_workspace_message_action(message_id: String, action: WorkspaceMessageAction) -> Result<WorkspaceMessageActionResult, AppError>`
+- CLI：
+  - `message action --id <message-id> --action <copy_code|open_link> [--format text|json]`
+- 前端：
+  - `applyWorkspaceMessageAction(messageId: string, action: WorkspaceMessageAction): Promise<WorkspaceMessageActionResult>`
+  - 浏览器预览必须基于当前内存 `WorkspaceBootstrapSnapshot` 本地回写，不能退回初始 seed
+
+`WorkspaceMessageActionResult` 当前结构：
+
+```json
+{
+  "action": "copy_code | open_link",
+  "message_id": "msg_github_security",
+  "copied_value": "362149",
+  "opened_url": null,
+  "snapshot": {}
+}
+```
+
+动作语义：
+
+- `copy_code` 只允许作用于存在 `extracted_code` 的消息
+- `open_link` 只允许作用于存在 `verification_link` 的消息
+- 动作执行成功后必须同时完成：
+  - 将目标消息状态更新为 `processed`
+  - 同步刷新 `message_groups`
+  - 同步刷新 `message_details`
+  - 同步刷新 `selected_message`
+  - 同步刷新 `mailboxes.unread_count`
+  - 同步刷新 `site_summaries.pending_count`
+  - 从 `extracts` 中移除与本次动作匹配的条目
+- `copy_code` 返回 `copied_value`，`opened_url` 必须为 `null`
+- `open_link` 返回 `opened_url`，`copied_value` 必须为 `null`
+- 前端详情面板按钮与 extract 卡片动作必须复用同一套 message action 合同，不能各自手写状态分叉
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI `message action` | 缺少 `--id` | `InvalidCliArgs` |
+| CLI `message action` | 缺少 `--action` | `InvalidCliArgs` |
+| CLI `message action` | `--action` 非 `copy_code|open_link` | `Validation(field="action")` |
+| Rust / Tauri / CLI `copy_code` | 目标消息无 `extracted_code` | `Validation(field="message.action")` |
+| Rust / Tauri / CLI `open_link` | 目标消息无 `verification_link` | `Validation(field="message.action")` |
+| 前端 `onExtractAction` | 未找到 extract 对应消息 | 显示可理解错误，不得静默吞掉 |
+
+新增最小验证要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖 `applies_copy_code_action_by_marking_processed_and_removing_extract`
+  - 覆盖 `applies_open_link_action_by_marking_processed_and_removing_extract`
+  - 覆盖 CLI `message_action_marks_processed_and_removes_matching_extract`
+- `bun test`
+  - 覆盖本地 `applyWorkspaceMessageAction`
+  - 覆盖 `findWorkspaceMessageIdForExtract`
+- `bun run build`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message action --id msg_github_security --action copy_code --format json`
+
+### 6.9. M3 站点确认流补充合同（2026-04-05）
+
+本轮补齐 M3 里“加入站点清单”的确认动作，要求 Rust 服务、Tauri command、CLI 与前端头部共享同一套站点确认语义。
+
+- Rust / Tauri：
+  - `confirm_workspace_site(input: String, label?: String) -> Result<WorkspaceBootstrapSnapshot, AppError>`
+- CLI：
+  - `site-context confirm --domain <domain> [--label <label>] [--format text|json]`
+- 前端：
+  - `confirmWorkspaceSite(input: string, label?: string | null): Promise<WorkspaceBootstrapSnapshot>`
+  - 头部仅在“未命中且输入像完整域名”时展示确认动作
+
+确认语义：
+
+- 输入必须先经过与 `resolve_workspace_site_context` 相同的归一化流程
+- 只有完整域名才允许确认加入；像 `lin` 这种不完整输入必须返回 `Validation(field="domain")`
+- 已存在同 hostname 站点时，不允许重复新增；如果带了 `label`，允许更新 label
+- 新增站点时必须写入 `site_summaries`
+- 新增站点即使暂时没有任何消息命中，也必须保留在清单里，`pending_count = 0`
+- 确认完成后前端应回写当前 snapshot，并将当前站点输入归一化为 hostname
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI `site-context confirm` | 缺少 `--domain` | `InvalidCliArgs` |
+| CLI / Tauri / 前端 | 输入无法归一化为完整域名 | `Validation(field="domain")` |
+| CLI / Tauri / 前端 | 域名首次加入 | `site_summaries` 新增该 hostname |
+| CLI / Tauri / 前端 | 域名已存在 | 更新 label 或直接返回现有项，不得重复追加 |
+
+新增最小验证要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml site_context_confirm_adds_manual_site_to_snapshot`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- site-context confirm --domain https://vercel.com/login --format json`
+- `bun run build`
+
+### 6.10. M3 独立已读状态补充合同（2026-04-05）
+
+本轮补齐 M3 里“read/unread 独立于 pending/processed”的能力，要求 Rust 服务、Tauri command、CLI 与前端详情面板共享同一套已读状态语义。
+
+- Rust / Tauri：
+  - `update_workspace_message_read_state(message_id: String, read_state: MessageReadState) -> Result<WorkspaceBootstrapSnapshot, AppError>`
+- CLI：
+  - `message read-state --id <message-id> --state <unread|read> [--format text|json]`
+- 前端：
+  - `updateWorkspaceMessageReadState(messageId: string, readState: MessageReadState): Promise<WorkspaceBootstrapSnapshot>`
+  - 详情面板必须提供“标记已读 / 标记未读”动作
+  - 浏览器预览必须基于当前内存 `WorkspaceBootstrapSnapshot` 本地回写，不能退回初始 seed
+
+已读状态语义：
+
+- `read_state` 与 `status` 独立维护：
+  - `read_state` 只表达是否已读
+  - `status` 只表达是否已处理
+- `message read-state` / `update_workspace_message_read_state` 只允许修改 `read_state`，不得隐式修改 `status`
+- `message open` 与 `message original` 仍然会自动将目标消息置为 `read`
+- `message mark --status processed` 与 `message action` 仍然会把目标消息一并置为 `read`
+- 已读状态更新成功后必须同步刷新：
+  - `message_groups[].items[].read_state`
+  - `message_details[].read_state`
+  - `selected_message.read_state`
+  - `mailboxes.unread_count`
+- 已读状态更新不应改变：
+  - `message_groups` 的 pending / processed 归属
+  - `site_summaries.pending_count`
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI `message read-state` | 缺少 `--id` | `InvalidCliArgs` |
+| CLI `message read-state` | 缺少 `--state` | `InvalidCliArgs` |
+| CLI `message read-state` | `--state` 非 `unread|read` | `Validation(field="state")` |
+| Rust / Tauri / CLI | 目标消息不存在 | `Validation(field="message.id")` |
+| Rust / Tauri / CLI | 从 `unread -> read` | `unread_count` 递减，`status` 保持原值 |
+| Rust / Tauri / CLI | 从 `read -> unread` | `unread_count` 递增，`status` 保持原值 |
+
+新增最小验证要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖 `updates_message_read_state_without_processing_message`
+  - 覆盖 CLI `message_read_state_updates_snapshot_and_persists_read_flag`
+- `bun test`
+  - 覆盖本地 `applyWorkspaceMessageReadState`
+  - 覆盖详情面板“标记已读”动作渲染
+- `bun run build`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message read-state --id msg_github_security --state read --format json`
