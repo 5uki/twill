@@ -18,7 +18,7 @@
 ### Main Changes
 
 - 记录首次初始化提交 `5533f68`
-- 记录本轮 planning / PRD / UI 规划提交 `97ddb46`
+- 记录本轮 planning / PRD / UI 规划提交 `4118609`
 - 补充 Twill MVP 的 UI 讨论、线框和 PRD UI 摘要
 
 **主要产出**:
@@ -63,7 +63,7 @@
 | Hash | Message |
 |------|---------|
 | `5533f68` | `feat: initialize Tauri + React application with basic greeting functionality` |
-| `97ddb46` | `docs(planning): capture UI baseline for mail client` |
+| `4118609` | `docs(planning): capture UI baseline and record journal` |
 
 ### Testing
 
@@ -81,92 +81,54 @@
 
 ---
 
-## Session 2: M1 接入首切片与 M0 UI 动画补齐
 
-**Date**: 2026-04-04
-**Task**: 启动 M1 账户接入首切片，并回补 M0 工作台 UI 动画
+## Session 2: M0 工作台底座落地与 M1 账户接入首切片
+
+**Date**: 2026-04-05
+**Task**: M0 工作台底座落地与 M1 账户接入首切片
 
 ### Summary
 
-本轮在已有 M0 工程底座之上，正式启动 M1 的第一刀实现，范围收敛为：
-
-- 账户模型
-- `account add / list / test` 的共享后端链路
-- `Accounts` 工作台面板
-- M0 工作台 UI 动画补齐
-
-其中，`account test` 本轮明确实现为**手动配置连接预检**，用于验证输入契约、服务器配置组合和跨层结果展示；密码持久化、系统级安全存储与真实 IMAP/SMTP 握手保留到下一切片。
+补录两笔已提交实现：先完成 M0 工程底座、工作台壳层与多平台 CI，再在同一底座上接入 M1 账户 onboarding 首切片，并回补工作台动效基线。
 
 ### Main Changes
 
-- 创建并激活 M1 任务：`04-04-implement-m1-account-onboarding`
-- 在 M1 PRD 中固化“接入首切片”决策与范围边界
-- Rust 侧新增账户领域模型、服务层、JSON 元数据存储与规则驱动预检逻辑
-- 新增 Tauri command：
-  - `add_account`
-  - `list_accounts`
-  - `test_account_connection`
-- CLI 新增：
-  - `account add`
-  - `account list`
-  - `account test`
-- 前端新增 `Accounts` 工作台视图、账户表单、账户列表和预检结果展示
-- 回补工作台动画基线：
-  - 壳层入场
-  - 面板分层入场
-  - 列表 / 卡片渐入与 hover / active / processed 过渡
-  - 内容切换动画
-  - loading / error / ready 状态切换
-  - `prefers-reduced-motion` 降级
+**阶段一：M0 工程底座（`591879d`）**
 
-**主要产出**:
+- 移除模板 `greet` 与默认素材，建立 `React -> Tauri Command -> Rust Service -> CLI` 的最小共享链路。
+- 新增 `workspace bootstrap` CLI、工作台快照领域模型、静态基础设施与服务层，让桌面端和 CLI 共用同一套核心逻辑。
+- 落下三栏工作台壳层、`Recent verification` 默认视图与多平台 CI，为后续功能迭代提供稳定底座。
+- 建立前后端最小测试入口，完成从模板工程到 Twill 工程骨架的切换。
 
-| 类别 | 内容 |
-|------|------|
-| Trellis 任务 | 新建 `.trellis/tasks/04-04-implement-m1-account-onboarding/` 并补写 `prd.md` |
-| 后端契约 | 新增账户输入/输出结构、校验规则、错误模型扩展 |
-| 服务层 | 新增账户新增、列表读取、连接预检共享逻辑 |
-| CLI | 新增账户管理命令，作为 M1 当前正式验证入口 |
-| 前端 | 接入 `Accounts` 工作台面板与状态管理 hook |
-| 动画 | 为现有工作台补齐层级动画与降级策略 |
+**阶段二：M1 账户接入首切片（`e5fa7aa`）**
 
-**关键决策**:
+- 新增账户领域模型、账户元数据存储、规则驱动连接预检，以及 `account add / list / test` 的共享后端链路。
+- 新增 `Accounts` 工作台面板、账户表单、账户列表、预检详情与 Tauri 调用封装，让账户 onboarding 真正进入现有工作台。
+- 回补工作台壳层、面板、卡片与状态切换动画，并加入 `prefers-reduced-motion` 降级，补齐 M0 的 UI 动效基线。
+- 明确本轮 `account test` 仅做手动配置连接预检，不引入密码持久化，也不执行真实 IMAP/SMTP 握手。
 
-- M1 第一切片选择“接入首切片”，而不是只建模或一次性做完整 onboarding
-- `account test` 定义为“连接预检”，不是完整联网登录验证
-- 本轮只保存**非敏感账户元数据**，不引入密码持久化
-- 不另起新壳层，继续在现有工作台内演进 `Accounts` 视图
-- UI 动画遵循“克制但明显”的工作台节奏，服务于扫读与状态反馈，而不是做表面特效
+**关键验证**
 
-**更新文件**:
+- M1 已通过 `cargo test`。
+- M1 已通过 `bun test`。
+- M1 已通过 `bun run build`。
+- M1 已通过 `cargo fmt --check`。
+- M1 已通过 `cargo clippy --all-targets --all-features`。
+- M1 已通过 `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- account test ...` 的 CLI 预检链路验证。
 
-- `.trellis/tasks/04-04-implement-m1-account-onboarding/prd.md`
-- `src-tauri/src/domain/account.rs`
-- `src-tauri/src/services/account_service.rs`
-- `src-tauri/src/infra/account_store.rs`
-- `src-tauri/src/infra/account_preflight.rs`
-- `src-tauri/src/commands/account.rs`
-- `src-tauri/src/cli/mod.rs`
-- `src/features/accounts/AccountsWorkspacePanel.tsx`
-- `src/features/accounts/AccountsDetailPanel.tsx`
-- `src/features/accounts/useAccountsOnboarding.ts`
-- `src/lib/tauri/accounts.ts`
-- `src/features/workspace/WorkspaceShell.tsx`
-- `src/App.css`
-- `tests/frontend/accounts-form.test.ts`
+**任务状态**
 
-**当前状态**:
+- 已归档 `03-29-implement-m0-engineering-foundation`。
+- 已归档 `04-04-implement-m1-account-onboarding`。
+- 继续保留 `03-29-brainstorm-mail-client-planning` 作为上层规划任务，承接后续切片设计与拆分。
 
-- 已完成 M1 接入首切片的本地实现
-- 已完成 M0 工作台动画补齐
-- 已完成本地自动化检查与 CLI 验证
-- 尚未进行人类手动 GUI 验证
-- 尚未生成业务提交 commit
-- 尚未执行完整 `record-session` 自动脚本与任务归档
 
 ### Git Commits
 
-- 本轮尚未提交代码，等待人工确认后一起提交
+| Hash | Message |
+|------|---------|
+| `591879d` | `feat(workspace): bootstrap M0 shell and multi-platform CI` |
+| `e5fa7aa` | `feat(accounts): bootstrap M1 onboarding slice and workspace motion` |
 
 ### Testing
 
@@ -179,16 +141,9 @@
 
 ### Status
 
-[~] **Ready For Human Review / Commit**
+[OK] **Recorded And Archived**
 
 ### Next Steps
 
-- 由人工进行桌面端实际交互验证，重点确认：
-  - `Accounts` 面板提交流程
-  - 视图切换与动效节奏
-  - 预检结果与错误提示文案
-- 人工确认后共同整理提交说明并创建代码提交
-- 提交完成后再决定是否执行完整 `record-session`
-- 下一切片进入：
-  - 系统级安全存储
-  - 真实 IMAP / SMTP 握手或更强连接探测
+- 保持 `03-29-brainstorm-mail-client-planning` 为活跃任务，继续承接后续切片设计。
+- 下一刀优先进入系统级安全存储与真实 IMAP / SMTP 探测能力。
