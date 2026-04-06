@@ -6,6 +6,7 @@ mod services;
 pub mod cli;
 
 use commands::account::{add_account, list_accounts, test_account_connection};
+use commands::compose::{prepare_compose_draft, send_message};
 use commands::sync::sync_workspace;
 use commands::workspace::{
     apply_workspace_message_action, confirm_workspace_site, list_workspace_messages,
@@ -33,7 +34,9 @@ pub fn run() {
             sync_workspace,
             list_accounts,
             add_account,
-            test_account_connection
+            test_account_connection,
+            prepare_compose_draft,
+            send_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

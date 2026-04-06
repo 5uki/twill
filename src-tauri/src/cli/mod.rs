@@ -3,6 +3,7 @@ use crate::domain::account::{
     AccountConnectionTestResult, AccountCredentialState, AddAccountInput, MailSecurity,
     MailServerConfig,
 };
+use crate::domain::compose::{ComposeMode, PrepareComposeInput, SendMessageInput};
 use crate::domain::error::AppError;
 use crate::domain::workspace::{
     MessageCategory, MessageReadState, MessageStatus, WorkspaceMailboxKind, WorkspaceMessageAction,
@@ -10,11 +11,13 @@ use crate::domain::workspace::{
 use crate::infra::account_preflight::LiveAccountConnectionTester;
 use crate::infra::account_secret_store::KeyringAccountSecretStore;
 use crate::infra::account_store::JsonFileAccountRepository;
+use crate::infra::compose_delivery::LiveComposeDeliveryClient;
 use crate::infra::workspace_store::JsonFileWorkspaceRepository;
 use crate::infra::workspace_sync_source::SeededWorkspaceSyncSource;
 use crate::services::account_service::{
     self, AccountConnectionTester, AccountRepository, AccountSecretStore,
 };
+use crate::services::compose_service::{self, MessageDeliveryClient};
 use crate::services::workspace_service::{
     self, WorkspaceMessageFilter, WorkspaceSnapshotRepository, WorkspaceSyncSource,
 };
@@ -48,17 +51,20 @@ where
     let secret_store = KeyringAccountSecretStore::from_default_service_name();
     let tester = LiveAccountConnectionTester::default();
     let sync_source = SeededWorkspaceSyncSource;
+    let delivery_client = LiveComposeDeliveryClient::default();
 
-    run_with_args_and_dependencies(
+    run_with_args_and_dependencies_with_sender(
         args,
         &repository,
         &workspace_repository,
         &secret_store,
         &tester,
         &sync_source,
+        &delivery_client,
     )
 }
 
+#[cfg(test)]
 fn run_with_args_and_dependencies<I, S, R, WorkspaceRepo, SecretStore, Tester, Source>(
     args: I,
     repository: &R,
@@ -75,6 +81,47 @@ where
     SecretStore: AccountSecretStore,
     Tester: AccountConnectionTester,
     Source: WorkspaceSyncSource,
+{
+    let delivery_client = LiveComposeDeliveryClient::default();
+
+    run_with_args_and_dependencies_with_sender(
+        args,
+        repository,
+        workspace_repository,
+        secret_store,
+        tester,
+        sync_source,
+        &delivery_client,
+    )
+}
+
+fn run_with_args_and_dependencies_with_sender<
+    I,
+    S,
+    R,
+    WorkspaceRepo,
+    SecretStore,
+    Tester,
+    Source,
+    DeliveryClient,
+>(
+    args: I,
+    repository: &R,
+    workspace_repository: &WorkspaceRepo,
+    secret_store: &SecretStore,
+    tester: &Tester,
+    sync_source: &Source,
+    delivery_client: &DeliveryClient,
+) -> Result<String, AppError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+    R: AccountRepository,
+    WorkspaceRepo: WorkspaceSnapshotRepository,
+    SecretStore: AccountSecretStore,
+    Tester: AccountConnectionTester,
+    Source: WorkspaceSyncSource,
+    DeliveryClient: MessageDeliveryClient,
 {
     let args = args
         .into_iter()
@@ -180,6 +227,22 @@ where
             ensure_no_unknown_flags(&flags)?;
             render_message_action(format, workspace_repository, &message_id, action)
         }
+        [message, send, rest @ ..] if message == "message" && send == "send" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let input = parse_send_message_input(&mut flags)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_message_send(format, repository, secret_store, delivery_client, input)
+        }
+        [compose, prepare, rest @ ..] if compose == "compose" && prepare == "prepare" => {
+            let mut flags = parse_flags(rest)?;
+            let format = take_output_format(&mut flags)?;
+            let input = parse_prepare_compose_input(&mut flags)?;
+
+            ensure_no_unknown_flags(&flags)?;
+            render_compose_prepare(format, workspace_repository, input)
+        }
         [site_context, resolve, rest @ ..]
             if site_context == "site-context" && resolve == "resolve" =>
         {
@@ -247,6 +310,8 @@ where
                 "  message mark --id <message-id> --status <pending|processed> [--format text|json]\n",
                 "  message read-state --id <message-id> --state <unread|read> [--format text|json]\n",
                 "  message action --id <message-id> --action <copy_code|open_link> [--format text|json]\n",
+                "  message send --account <account-id> --to <email> --subject <text> --body <text> [--format text|json]\n",
+                "  compose prepare --mode <new|reply|forward> [--source-message <id>] [--account <id>] [--format text|json]\n",
                 "  site-context resolve --domain <domain> [--format text|json]\n",
                 "  site-context confirm --domain <domain> [--label <label>] [--format text|json]\n",
                 "  account list [--format text|json]\n",
@@ -804,6 +869,70 @@ where
     }
 }
 
+fn render_message_send<R, SecretStore, DeliveryClient>(
+    format: OutputFormat,
+    repository: &R,
+    secret_store: &SecretStore,
+    delivery_client: &DeliveryClient,
+    input: SendMessageInput,
+) -> Result<String, AppError>
+where
+    R: AccountRepository,
+    SecretStore: AccountSecretStore,
+    DeliveryClient: MessageDeliveryClient,
+{
+    let result = compose_service::send_message(repository, secret_store, delivery_client, input)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&result).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "邮件发送结果\n账号: {}\n收件人: {}\n主题: {}\n模式: {:?}\nSMTP: {}\n摘要: {}",
+            result.account_id,
+            result.to,
+            result.subject,
+            result.delivery_mode,
+            result.smtp_endpoint,
+            result.summary
+        )),
+    }
+}
+
+fn render_compose_prepare<R>(
+    format: OutputFormat,
+    workspace_repository: &R,
+    input: PrepareComposeInput,
+) -> Result<String, AppError>
+where
+    R: WorkspaceSnapshotRepository,
+{
+    let draft = compose_service::prepare_compose_draft(workspace_repository, input)?;
+
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(&draft).map_err(|error| AppError::Serialization {
+                message: error.to_string(),
+            })
+        }
+        OutputFormat::Text => Ok(format!(
+            "Compose 草稿\n模式: {:?}\n账号: {}\n来源消息: {}\n收件人: {}\n主题: {}\n正文:\n{}",
+            draft.mode,
+            draft.account_id,
+            draft.source_message_id.as_deref().unwrap_or("-"),
+            if draft.to.is_empty() {
+                "-"
+            } else {
+                draft.to.as_str()
+            },
+            draft.subject,
+            draft.body
+        )),
+    }
+}
+
 fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
     let status = match result.status {
         AccountConnectionStatus::Passed => "閫氳繃",
@@ -932,6 +1061,27 @@ fn parse_account_test_input(
     })
 }
 
+fn parse_send_message_input(
+    flags: &mut BTreeMap<String, String>,
+) -> Result<SendMessageInput, AppError> {
+    Ok(SendMessageInput {
+        account_id: take_required_flag(flags, "--account")?,
+        to: take_required_flag(flags, "--to")?,
+        subject: take_required_flag(flags, "--subject")?,
+        body: take_required_flag(flags, "--body")?,
+    })
+}
+
+fn parse_prepare_compose_input(
+    flags: &mut BTreeMap<String, String>,
+) -> Result<PrepareComposeInput, AppError> {
+    Ok(PrepareComposeInput {
+        mode: parse_compose_mode(&take_required_flag(flags, "--mode")?)?,
+        source_message_id: flags.remove("--source-message"),
+        account_id: flags.remove("--account"),
+    })
+}
+
 fn take_required_flag(flags: &mut BTreeMap<String, String>, key: &str) -> Result<String, AppError> {
     flags.remove(key).ok_or_else(|| AppError::InvalidCliArgs {
         message: format!("缺少参数: {key}"),
@@ -1047,6 +1197,18 @@ fn parse_message_action(value: &str) -> Result<WorkspaceMessageAction, AppError>
     }
 }
 
+fn parse_compose_mode(value: &str) -> Result<ComposeMode, AppError> {
+    match value {
+        "new" => Ok(ComposeMode::New),
+        "reply" => Ok(ComposeMode::Reply),
+        "forward" => Ok(ComposeMode::Forward),
+        other => Err(AppError::Validation {
+            field: "mode".to_string(),
+            message: format!("不支持的 compose 模式: {other}"),
+        }),
+    }
+}
+
 fn parse_bool_flag(value: &str, field: &str) -> Result<bool, AppError> {
     match value {
         "true" => Ok(true),
@@ -1087,13 +1249,17 @@ fn default_workspace_store_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::run_with_args_and_dependencies;
+    use super::{run_with_args_and_dependencies, run_with_args_and_dependencies_with_sender};
+    use crate::domain::compose::MessageDeliveryMode;
     use crate::domain::error::AppError;
     use crate::infra::account_preflight::LiveAccountConnectionTester;
     use crate::infra::account_store::JsonFileAccountRepository;
     use crate::infra::workspace_store::JsonFileWorkspaceRepository;
     use crate::infra::workspace_sync_source::SeededWorkspaceSyncSource;
     use crate::services::account_service::AccountSecretStore;
+    use crate::services::compose_service::{
+        MessageDeliveryClient, MessageDeliveryReceipt, MessageDeliveryRequest,
+    };
     use serde_json::Value;
     use std::cell::RefCell;
     use std::collections::BTreeSet;
@@ -1115,6 +1281,14 @@ mod tests {
             Ok(())
         }
 
+        fn read_secret(&self, account_id: &str) -> Result<Option<String>, AppError> {
+            Ok(self
+                .stored_accounts
+                .borrow()
+                .contains(account_id)
+                .then_some("app-password".to_string()))
+        }
+
         fn delete_secret(&self, account_id: &str) -> Result<(), AppError> {
             self.stored_accounts.borrow_mut().remove(account_id);
             Ok(())
@@ -1122,6 +1296,26 @@ mod tests {
 
         fn has_secret(&self, account_id: &str) -> Result<bool, AppError> {
             Ok(self.stored_accounts.borrow().contains(account_id))
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingDeliveryClient {
+        requests: RefCell<Vec<MessageDeliveryRequest>>,
+    }
+
+    impl MessageDeliveryClient for RecordingDeliveryClient {
+        fn send_message(
+            &self,
+            request: &MessageDeliveryRequest,
+        ) -> Result<MessageDeliveryReceipt, AppError> {
+            self.requests.borrow_mut().push(request.clone());
+
+            Ok(MessageDeliveryReceipt {
+                delivery_mode: MessageDeliveryMode::Simulated,
+                summary: "模拟发送已提交".to_string(),
+                smtp_endpoint: format!("{}:{}", request.smtp.host, request.smtp.port),
+            })
         }
     }
 
@@ -1335,6 +1529,141 @@ mod tests {
                 .as_str()
                 .is_some_and(|summary| summary.contains("实时探测通过")),
             "CLI 应返回实时探测成功语义"
+        );
+    }
+
+    #[test]
+    fn message_send_returns_structured_json_result() {
+        let repository = JsonFileAccountRepository::new(unique_store_path());
+        let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_source = SeededWorkspaceSyncSource;
+        let delivery_client = RecordingDeliveryClient::default();
+
+        run_with_args_and_dependencies(
+            [
+                "account",
+                "add",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--password",
+                "app-password",
+                "--imap-host",
+                "imap.example.com",
+                "--imap-port",
+                "993",
+                "--imap-security",
+                "tls",
+                "--smtp-host",
+                "smtp.example.com",
+                "--smtp-port",
+                "587",
+                "--smtp-security",
+                "start_tls",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("新增账号应成功");
+
+        let output = run_with_args_and_dependencies_with_sender(
+            [
+                "message",
+                "send",
+                "--account",
+                "acct_primary-example-com",
+                "--to",
+                "dev@example.com",
+                "--subject",
+                "Launch update",
+                "--body",
+                "Shipping today.",
+                "--format",
+                "json",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+            &delivery_client,
+        )
+        .expect("发送命令应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("发送输出应为 JSON");
+
+        assert_eq!(parsed["account_id"], "acct_primary-example-com");
+        assert_eq!(parsed["to"], "dev@example.com");
+        assert_eq!(parsed["delivery_mode"], "simulated");
+        assert_eq!(parsed["status"], "sent");
+        assert_eq!(delivery_client.requests.borrow().len(), 1);
+        assert_eq!(
+            delivery_client.requests.borrow()[0].subject,
+            "Launch update"
+        );
+    }
+
+    #[test]
+    fn compose_prepare_returns_prefilled_reply_draft() {
+        let output = run_with_args_and_test_store(
+            [
+                "compose",
+                "prepare",
+                "--mode",
+                "reply",
+                "--source-message",
+                "msg_github_security",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("reply compose prepare 应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("compose 输出应为 JSON");
+
+        assert_eq!(parsed["mode"], "reply");
+        assert_eq!(parsed["account_id"], "seed_primary-gmail");
+        assert_eq!(parsed["to"], "noreply@github.com");
+        assert_eq!(parsed["subject"], "Re: GitHub 安全验证码");
+        assert!(
+            parsed["body"]
+                .as_str()
+                .is_some_and(|body| body.contains("写道"))
+        );
+    }
+
+    #[test]
+    fn compose_prepare_returns_forward_draft_with_empty_recipient() {
+        let output = run_with_args_and_test_store(
+            [
+                "compose",
+                "prepare",
+                "--mode",
+                "forward",
+                "--source-message",
+                "msg_linear_verify",
+                "--format",
+                "json",
+            ],
+            unique_store_path(),
+        )
+        .expect("forward compose prepare 应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("compose 输出应为 JSON");
+
+        assert_eq!(parsed["mode"], "forward");
+        assert_eq!(parsed["to"], "");
+        assert_eq!(parsed["subject"], "Fwd: Linear 验证链接");
+        assert!(
+            parsed["body"]
+                .as_str()
+                .is_some_and(|body| body.contains("转发邮件"))
         );
     }
 

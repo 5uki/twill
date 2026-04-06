@@ -50,6 +50,16 @@ impl AccountSecretStore for KeyringAccountSecretStore {
             })
     }
 
+    fn read_secret(&self, account_id: &str) -> Result<Option<String>, AppError> {
+        match self.entry(account_id)?.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(AppError::Storage {
+                message: format!("读取系统安全存储失败: {error}"),
+            }),
+        }
+    }
+
     fn delete_secret(&self, account_id: &str) -> Result<(), AppError> {
         match self.entry(account_id)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -106,6 +116,18 @@ impl<R: Runtime> AccountSecretStore for TauriSecureStorageAccountSecretStore<R> 
             .set_item(self.app.clone(), self.payload(account_id, Some(secret)))
             .map(|_| ())
             .map_err(|error| Self::map_storage_error("写入系统安全存储", error))
+    }
+
+    fn read_secret(&self, account_id: &str) -> Result<Option<String>, AppError> {
+        match self
+            .app
+            .secure_storage()
+            .get_item(self.app.clone(), self.payload(account_id, None))
+        {
+            Ok(response) => Ok(response.data),
+            Err(error) if Self::is_missing_entry(&error) => Ok(None),
+            Err(error) => Err(Self::map_storage_error("读取系统安全存储凭据", error)),
+        }
     }
 
     fn delete_secret(&self, account_id: &str) -> Result<(), AppError> {

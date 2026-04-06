@@ -1,0 +1,54 @@
+{
+  "id": "implement-m4-reply-forward-flow",
+  "name": "implement-m4-reply-forward-flow",
+  "title": "implement: M4 reply forward flow",
+  "description": "继续推进 M4：补齐 reply/forward 预填流，提供共享的 compose 准备服务、CLI 模拟入口、Tauri command 与前端详情按钮。",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "cross-layer",
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-06",
+  "completedAt": "2026-04-06",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 1,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [
+    "src/App.tsx",
+    "src/components/MailWorkspace.tsx",
+    "src/components/ComposeWorkspace.tsx",
+    "src-tauri/src/cli/mod.rs",
+    "src-tauri/src/commands/compose.rs",
+    "src-tauri/src/services/compose_service.rs"
+  ],
+  "notes": "已完成 M4 reply/forward 流：新增 compose prepare 合同、共享预填服务、CLI `compose prepare`、Tauri `prepare_compose_draft` 与前端详情面板回复/转发入口，并补齐来源邮件展示与本地回退逻辑。",
+  "meta": {
+    "milestone": "M4",
+    "slice": "reply-forward-flow"
+  }
+}

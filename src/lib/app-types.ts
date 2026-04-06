@@ -15,6 +15,9 @@ export type WorkspaceExtractKind = "code" | "link";
 export type WorkspaceSyncState = "ready";
 export type WorkspaceSyncPhase = "first" | "incremental";
 export type WorkspaceMailboxKind = "inbox" | "spam_junk";
+export type MessageSendStatus = "sent";
+export type MessageDeliveryMode = "simulated";
+export type ComposeMode = "new" | "reply" | "forward";
 
 export interface MailServerConfig {
   host: string;
@@ -201,4 +204,36 @@ export interface AccountConnectionCommandInput {
   login: string;
   imap: MailServerConfig;
   smtp: MailServerConfig;
+}
+
+export interface SendMessageCommandInput {
+  account_id: string;
+  to: string;
+  subject: string;
+  body: string;
+}
+
+export interface PrepareComposeCommandInput {
+  mode: ComposeMode;
+  source_message_id?: string | null;
+  account_id?: string | null;
+}
+
+export interface PreparedComposeDraft {
+  mode: ComposeMode;
+  account_id: string;
+  to: string;
+  subject: string;
+  body: string;
+  source_message_id?: string | null;
+}
+
+export interface SendMessageResult {
+  account_id: string;
+  to: string;
+  subject: string;
+  status: MessageSendStatus;
+  delivery_mode: MessageDeliveryMode;
+  summary: string;
+  smtp_endpoint: string;
 }

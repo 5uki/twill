@@ -4,7 +4,8 @@ export type WorkspaceCategory =
   | "verifications"
   | "inbox"
   | "sites"
-  | "accounts";
+  | "accounts"
+  | "compose";
 
 export type WorkspaceCategoryGroup = "mail" | "manage";
 
@@ -37,6 +38,12 @@ const workspaceCategoryMeta: Record<WorkspaceCategory, WorkspaceCategoryMeta> = 
   accounts: {
     title: "账号管理",
     navigationLabel: "账号管理",
+    group: "manage",
+    groupLabel: "管理",
+  },
+  compose: {
+    title: "新建邮件",
+    navigationLabel: "新建邮件",
     group: "manage",
     groupLabel: "管理",
   },

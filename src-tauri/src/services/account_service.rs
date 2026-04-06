@@ -12,6 +12,7 @@ pub trait AccountRepository {
 
 pub trait AccountSecretStore {
     fn save_secret(&self, account_id: &str, secret: &str) -> Result<(), AppError>;
+    fn read_secret(&self, account_id: &str) -> Result<Option<String>, AppError>;
     #[allow(dead_code)]
     fn delete_secret(&self, account_id: &str) -> Result<(), AppError>;
     fn has_secret(&self, account_id: &str) -> Result<bool, AppError>;
@@ -303,6 +304,14 @@ mod tests {
                 .insert(account_id.to_string());
 
             Ok(())
+        }
+
+        fn read_secret(&self, account_id: &str) -> Result<Option<String>, AppError> {
+            Ok(self
+                .stored_accounts
+                .borrow()
+                .contains(account_id)
+                .then_some("app-password".to_string()))
         }
 
         fn delete_secret(&self, account_id: &str) -> Result<(), AppError> {

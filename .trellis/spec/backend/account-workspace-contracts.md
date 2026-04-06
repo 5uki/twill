@@ -634,3 +634,158 @@ syncWorkspace(): Promise<WorkspaceBootstrapSnapshot>
 - `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
 - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message read-state --id msg_github_security --state read --format json`
+
+### 6.11. M4 新建邮件发送首切片补充合同（2026-04-06）
+
+本轮正式启动 M4，但只交付“新建邮件发送”的第一条最小闭环；回复 / 转发和完整 SMTP 协议适配仍留到后续切片。当前要求 CLI、Tauri 与前端 Compose 面板共享同一套发送合同。
+
+- Rust / Tauri：
+  - `send_message(input: SendMessageInput) -> Result<SendMessageResult, AppError>`
+- CLI：
+  - `message send --account <account-id> --to <email> --subject <text> --body <text> [--format text|json]`
+- 前端：
+  - `sendMessage(input: SendMessageCommandInput): Promise<SendMessageResult>`
+  - `ComposeWorkspace` 必须允许用户选择账号、输入收件人 / 主题 / 正文，并展示结构化发送反馈
+
+`SendMessageInput` 当前合同：
+
+```json
+{
+  "account_id": "acct_primary-example-com",
+  "to": "dev@example.com",
+  "subject": "Launch update",
+  "body": "Shipping today."
+}
+```
+
+`SendMessageResult` 当前合同：
+
+```json
+{
+  "account_id": "acct_primary-example-com",
+  "to": "dev@example.com",
+  "subject": "Launch update",
+  "status": "sent",
+  "delivery_mode": "simulated",
+  "summary": "已验证 acct_primary-example-com 的 SMTP 提交通道可达，并生成模拟发送回执。",
+  "smtp_endpoint": "smtp.example.com:587"
+}
+```
+
+当前阶段边界：
+
+- `delivery_mode` 目前固定为 `simulated`
+- 发送服务会复用：
+  - 已保存账号元数据
+  - 系统安全存储密码
+  - SMTP 主机 / 端口配置
+- 当前 live delivery 只验证 SMTP socket 可达并生成模拟发送回执，不冒充完整 SMTP 协议发送
+- 浏览器预览模式不得伪造发送成功，必须明确提示仅桌面端可发送
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI / Tauri / 前端 | `account_id` 为空 | `Validation(field="account_id")` |
+| CLI / Tauri / 前端 | `to` 非法 | `Validation(field="to")` |
+| CLI / Tauri / 前端 | `subject` 为空 | `Validation(field="subject")` |
+| CLI / Tauri / 前端 | `body` 为空 | `Validation(field="body")` |
+| CLI / Tauri / 前端 | 账号不存在 | `Validation(field="account_id")` |
+| CLI / Tauri / 前端 | 系统安全存储缺少密码 | `Validation(field="account.credential")` |
+| CLI / Tauri / 前端 | SMTP 提交通道不可达 | `Validation(field="smtp")` |
+
+新增最小验证要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖服务层 `sends_message_with_trimmed_input_and_resolved_account_credentials`
+  - 覆盖 infra 层 `returns_simulated_receipt_when_smtp_socket_is_reachable`
+  - 覆盖 CLI `message_send_returns_structured_json_result`
+- `bun test`
+  - 覆盖 `ComposeWorkspace` 渲染与 `buildSendMessageCommandInput`
+- `bun run build`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message send --account acct_primary-example-com --to dev@example.com --subject "hello" --body "world" --format json`
+
+### 6.12. M4 回复 / 转发预填流补充合同（2026-04-06）
+
+本轮继续推进 M4，在“新建邮件发送”基础上补齐 reply / forward 的最小准备流。要求 CLI、Tauri 与前端本地回退共享同一套 compose 预填语义，而不是各自拼装不同草稿。
+
+- Rust / Tauri：
+  - `prepare_compose_draft(input: PrepareComposeInput) -> Result<PreparedComposeDraft, AppError>`
+- CLI：
+  - `compose prepare --mode <new|reply|forward> [--source-message <id>] [--account <id>] [--format text|json]`
+- 前端：
+  - `prepareComposeDraft(input: PrepareComposeCommandInput): Promise<PreparedComposeDraft>`
+  - 浏览器预览模式必须复用本地 `prepareComposeDraftFromMessage(mode, message)`，与 Rust 侧保持同名字段和同等前缀 / 引用语义
+  - 邮件详情面板必须提供“回复 / 转发”动作，并把用户带入同一个 Compose 面板，而不是打开另一套临时表单
+
+`PrepareComposeInput` 当前合同：
+
+```json
+{
+  "mode": "reply",
+  "source_message_id": "msg_github_security",
+  "account_id": null
+}
+```
+
+`PreparedComposeDraft` 当前合同：
+
+```json
+{
+  "mode": "reply",
+  "account_id": "seed_primary-gmail",
+  "to": "noreply@github.com",
+  "subject": "Re: GitHub 安全验证码",
+  "body": "\n\n在 2026-04-05T08:58:00Z，noreply@github.com 写道：\n> GitHub 安全验证码",
+  "source_message_id": "msg_github_security"
+}
+```
+
+预填语义：
+
+- `mode = new`
+  - 返回空草稿
+  - 允许透传可选 `account_id`，便于 Compose 面板保留当前发件账号
+- `mode = reply | forward`
+  - 必须提供 `source_message_id`
+  - 必须从同一份 workspace snapshot 读取来源邮件详情
+  - `account_id` 以来源邮件所属账号为准，不允许前端另算
+- `reply`
+  - 默认 `to = source.sender`
+  - `subject` 自动补 `Re: ` 前缀，但不得重复叠加
+  - `body` 必须包含引用块，格式为 `在 <received_at>，<sender> 写道：` 加逐行 `> ` 引用
+- `forward`
+  - 默认 `to = ""`
+  - `subject` 自动补 `Fwd: ` 前缀，但不得重复叠加
+  - `body` 必须包含“转发邮件”引用头，并保留原发件人、账号、时间、主题与正文
+- Compose 面板在 `reply | forward` 模式下必须显示：
+  - 当前模式 badge
+  - 来源邮件标题 / 发件人 / 账号 / 邮箱标签
+  - “切回新建”动作
+
+新增验证矩阵：
+
+| 入口 | 条件 | 结果 |
+|------|------|------|
+| CLI / Tauri / 前端 | `mode = reply|forward` 但缺少 `source_message_id` | `Validation(field="source_message_id")` |
+| CLI / Tauri / 前端 | `source_message_id` 不存在 | `Validation(field="message.id")` |
+| CLI / Tauri / 前端 | 原主题已包含 `Re:` 或 `Fwd:` | 不得重复叠加主题前缀 |
+| CLI / Tauri / 前端 | 浏览器预览模式点击回复 / 转发 | 必须走本地回退 helper，而不是伪造桌面端 invoke 成功 |
+
+新增最小验证要求：
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+  - 覆盖服务层 `prepares_reply_draft_from_workspace_message`
+  - 覆盖服务层 `prepares_forward_draft_without_duplicate_prefix`
+  - 覆盖服务层 `rejects_reply_prepare_without_source_message`
+  - 覆盖 CLI `compose_prepare_returns_prefilled_reply_draft`
+  - 覆盖 CLI `compose_prepare_returns_forward_draft_with_empty_recipient`
+- `bun test`
+  - 覆盖 `ComposeWorkspace` 的回复模式来源邮件展示
+  - 覆盖前端本地 `prepareComposeDraftFromMessage()` 对 reply / forward 的前缀与引用语义
+- `bun run build`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- compose prepare --mode reply --source-message msg_github_security --format json`

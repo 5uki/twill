@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
-- **Last Active**: 2026-04-05
+- **Total Sessions**: 14
+- **Last Active**: 2026-04-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | 501 | Active |
+| `journal-1.md` | 407 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 14 | 2026-04-06 | M4 回复 / 转发预填流 | `pending final commit` |
+| 13 | 2026-04-06 | M4 新建邮件发送首切片 | `pending final commit` |
 | 12 | 2026-04-05 | M3 独立已读状态流 | `pending final commit` |
 | 11 | 2026-04-05 | M3 站点确认流 | `pending final commit` |
 | 10 | 2026-04-05 | M3 高价值动作自动标记 | `pending final commit` |

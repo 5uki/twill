@@ -499,3 +499,94 @@
 
 - 这轮之后，M3 的核心工作台流已经具备：阅读、48 小时验证窗口、当前站点匹配、站点确认、原始邮件打开、高价值动作自动标记、手动处理、独立 read/unread
 - CLI 实跑仍需显式设置 `TWILL_WORKSPACE_STORE`，否则当前环境对默认 workspace cache 路径的锁文件创建会返回权限错误；这不是本轮 read/unread 逻辑问题
+
+---
+
+## Session 13: M4 新建邮件发送首切片
+**Date**: 2026-04-06
+**Task**: M4 新建邮件发送首切片
+
+### Summary
+
+确认 M3 已完成后，正式转入 M4，并把第一刀收敛成“新建邮件发送”这条最短闭环：新增统一发送服务、CLI `message send`、Tauri `send_message` 与前端 Compose 面板，同时明确当前 live delivery 只验证 SMTP 提交通道可达并返回模拟发送回执。
+
+### Main Changes
+
+- 新增 Rust `compose` 域模型，定义 `SendMessageInput / SendMessageResult / delivery_mode`
+- 扩展 `AccountSecretStore` 支持读取系统密码，避免发送链路复制账号逻辑
+- 新增 `compose_service::send_message`，统一承接账号解析、字段校验、密码读取与发送客户端调用
+- 新增 `socket_probe` 与 `compose_delivery` infra，当前 live delivery 通过 SMTP socket 可达性生成 `simulated` 回执
+- Tauri 新增 `send_message` command，并接入 `src-tauri/src/lib.rs`
+- CLI 新增 `message send --account ... --to ... --subject ... --body ... [--format text|json]`
+- 前端新增 `ComposeWorkspace`、`compose-form` helper、`sendMessage()` API 与侧栏“新建邮件”入口
+- `App.tsx` 新增 Compose 状态管理、账号同步选择逻辑与发送结果 / 错误反馈
+- 更新 backend contract 与本轮 task 记录，明确当前发送模式边界
+
+### Testing
+
+- `bun test`
+- `bun run build`
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- 使用临时 `TWILL_ACCOUNT_STORE` / `TWILL_SECRET_SERVICE` 实跑：
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- account add ...`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message send --account acct_primary-example-com --to dev@example.com --subject hello --body world --format json`
+
+### Status
+
+[~] **Prepared For Review And Commit**
+
+### Notes
+
+- 当前 `delivery_mode` 明确为 `simulated`，不会把“SMTP 端口可达”伪装成“完整真实 SMTP 已交付”
+- 回复 / 转发、多收件人、附件、已发送箱持久化和真实 SMTP 协议适配仍留给后续 M4 切片
+
+---
+
+## Session 14: M4 回复 / 转发预填流
+**Date**: 2026-04-06
+**Task**: M4 回复 / 转发预填流
+
+### Summary
+
+继续推进 M4，在新建邮件发送首切片基础上，把“从邮件详情一键回复 / 转发”补成真正闭环：新增统一 compose prepare 合同、CLI `compose prepare`、Tauri `prepare_compose_draft` 与前端详情面板入口，并确保浏览器预览模式也复用同一套预填语义。
+
+### Main Changes
+
+- Rust `compose` 域模型新增 `ComposeMode / PrepareComposeInput / PreparedComposeDraft`
+- `compose_service::prepare_compose_draft` 统一承接 `new / reply / forward` 三种草稿准备逻辑
+- reply 语义固定为：
+  - `to = sender`
+  - `subject` 自动补 `Re:`
+  - `body` 带引用块
+- forward 语义固定为：
+  - 空收件人
+  - `subject` 自动补 `Fwd:`
+  - `body` 带转发头与原文引用
+- CLI 新增 `compose prepare --mode <new|reply|forward> --source-message <id> [--format text|json]`
+- Tauri 新增 `prepare_compose_draft`
+- 前端 `MailWorkspace` 详情面板新增“回复 / 转发”按钮
+- `App.tsx` 接入 compose mode、source message、reset-to-new 与 reply/forward 预填跳转
+- `ComposeWorkspace` 新增模式 badge、来源邮件卡片和“切回新建”动作
+- 前端本地 helper `prepareComposeDraftFromMessage()` 与 Rust 侧保持同样的前缀与引用语义
+- 更新 backend contract、任务状态和 workspace 记录
+
+### Testing
+
+- `bun test`
+- `bun run build`
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- compose prepare --mode reply --source-message msg_github_security --format json`
+
+### Status
+
+[~] **Prepared For Review And Commit**
+
+### Notes
+
+- 这轮完成后，M4 已具备：新建邮件发送、从详情面板进入回复 / 转发、共享 compose prepare 语义与 CLI 模拟入口
+- 当前仍未覆盖线程模型、`Reply-To` / `Cc` / `Bcc`、附件、多收件人和真实 SMTP 协议发送

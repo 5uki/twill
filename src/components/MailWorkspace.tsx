@@ -337,6 +337,8 @@ interface MailWorkspaceProps {
   onToggleVerificationWindow?: () => void;
   onExtractAction?: (item: WorkspaceExtractItem) => Promise<void> | void;
   onOpenVerificationLink?: (url: string) => Promise<void> | void;
+  onReplyMessage?: (message: WorkspaceMessageDetail) => Promise<void> | void;
+  onForwardMessage?: (message: WorkspaceMessageDetail) => Promise<void> | void;
 }
 
 export function MailWorkspace({
@@ -359,6 +361,8 @@ export function MailWorkspace({
   onToggleVerificationWindow,
   onExtractAction,
   onOpenVerificationLink,
+  onReplyMessage,
+  onForwardMessage,
 }: MailWorkspaceProps) {
   const [extracts, setExtracts] = useState(snapshot.extracts);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -565,10 +569,12 @@ export function MailWorkspace({
             <MessageDetailCard
               isActionLoading={isReadingLoading}
               message={resolvedSelectedMessage}
+              onForwardMessage={onForwardMessage}
               onMessageAction={onMessageAction}
               onMessageReadStateChange={onMessageReadStateChange}
               onOpenOriginalMessage={onOpenOriginalMessage}
               onOpenVerificationLink={openLink}
+              onReplyMessage={onReplyMessage}
               onUpdateStatus={onMessageStatusChange}
             />
           ) : (
@@ -662,6 +668,8 @@ function MessageDetailCard({
   onMessageReadStateChange,
   onOpenOriginalMessage,
   onOpenVerificationLink,
+  onReplyMessage,
+  onForwardMessage,
   onUpdateStatus,
 }: {
   isActionLoading?: boolean;
@@ -670,6 +678,8 @@ function MessageDetailCard({
   onMessageReadStateChange?: (readState: MessageReadState) => Promise<void> | void;
   onOpenOriginalMessage?: () => Promise<void> | void;
   onOpenVerificationLink: (url: string) => Promise<void> | void;
+  onReplyMessage?: (message: WorkspaceMessageDetail) => Promise<void> | void;
+  onForwardMessage?: (message: WorkspaceMessageDetail) => Promise<void> | void;
   onUpdateStatus?: (status: MessageStatus) => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -743,6 +753,22 @@ function MessageDetailCard({
             打开原始邮件
           </button>
         ) : null}
+        <button
+          className="message-detail-action secondary"
+          disabled={isActionLoading}
+          type="button"
+          onClick={() => void onReplyMessage?.(message)}
+        >
+          回复
+        </button>
+        <button
+          className="message-detail-action secondary"
+          disabled={isActionLoading}
+          type="button"
+          onClick={() => void onForwardMessage?.(message)}
+        >
+          转发
+        </button>
         <button
           className="message-detail-action secondary"
           disabled={isActionLoading}

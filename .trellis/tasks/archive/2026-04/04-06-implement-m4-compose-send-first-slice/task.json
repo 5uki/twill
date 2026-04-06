@@ -1,0 +1,56 @@
+{
+  "id": "implement-m4-compose-send-first-slice",
+  "name": "implement-m4-compose-send-first-slice",
+  "title": "implement: M4 compose send first slice",
+  "description": "启动 M4 的第一刀：补齐新建邮件发送主链，提供统一的服务层、CLI 模拟器、Tauri command 与前端 Compose 面板，并覆盖关键发送失败反馈。",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "cross-layer",
+  "priority": "P2",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-04-06",
+  "completedAt": "2026-04-06",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 1,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-29-brainstorm-mail-client-planning",
+  "relatedFiles": [
+    "src/App.tsx",
+    "src/lib/app-api.ts",
+    "src/lib/app-types.ts",
+    "src-tauri/src/lib.rs",
+    "src-tauri/src/cli/mod.rs",
+    "src-tauri/src/services/account_service.rs",
+    "src-tauri/src/infra/account_secret_store.rs"
+  ],
+  "notes": "已完成 M4 首个发送切片：新增可替换发送服务、系统密码读取、CLI `message send`、Tauri `send_message` 与前端 Compose 面板，并补齐模拟提交通道成功/失败验证。",
+  "meta": {
+    "milestone": "M4",
+    "slice": "compose-send-first-slice",
+    "delivery_mode": "simulated"
+  }
+}

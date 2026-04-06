@@ -1063,6 +1063,84 @@ html, body, #root {
   gap: 10px;
 }
 
+.compose-panel {
+  gap: 18px;
+}
+
+.compose-header-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.compose-source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eff6ff 100%);
+}
+
+.compose-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compose-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 1.1fr);
+  gap: 16px;
+}
+
+.compose-body-input textarea {
+  min-height: 220px;
+  font-family: 'Inter', sans-serif;
+  line-height: 1.6;
+}
+
+.compose-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eff6ff 100%);
+}
+
+.compose-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compose-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.compose-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(191, 219, 254, 0.9);
+}
+
+.compose-result-label {
+  color: #64748b;
+  font-size: 12px;
+}
+
 /* Utilities */
 .text-truncate {
   white-space: nowrap;
@@ -1101,10 +1179,16 @@ html, body, #root {
     flex-direction: column;
   }
 
+  .compose-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compose-header-badges,
   .accounts-list-badges {
     justify-content: flex-start;
   }
 
+  .compose-source-row,
   .message-detail-heading {
     flex-direction: column;
   }

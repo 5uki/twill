@@ -5,8 +5,12 @@ import type {
   AccountConnectionCommandInput,
   AccountConnectionTestResult,
   AccountSummary,
+  PrepareComposeCommandInput,
+  PreparedComposeDraft,
   MessageStatus,
   AddAccountCommandInput,
+  SendMessageCommandInput,
+  SendMessageResult,
   WorkspaceBootstrapSnapshot,
   WorkspaceMessageAction,
   WorkspaceMessageActionResult,
@@ -199,6 +203,26 @@ export async function testAccountConnection(
   return invoke<AccountConnectionTestResult>("test_account_connection", {
     input,
   });
+}
+
+export async function sendMessage(
+  input: SendMessageCommandInput,
+): Promise<SendMessageResult> {
+  if (!hasDesktopRuntime()) {
+    throw new Error("当前浏览器预览不支持真实发信，请在桌面端使用。");
+  }
+
+  return invoke<SendMessageResult>("send_message", { input });
+}
+
+export async function prepareComposeDraft(
+  input: PrepareComposeCommandInput,
+): Promise<PreparedComposeDraft> {
+  if (!hasDesktopRuntime()) {
+    throw new Error("当前浏览器预览不支持桌面端 compose 预填，请使用本地回退逻辑。");
+  }
+
+  return invoke<PreparedComposeDraft>("prepare_compose_draft", { input });
 }
 
 export async function openExternalUrl(url: string): Promise<void> {
