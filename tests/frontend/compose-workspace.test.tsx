@@ -3,8 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ComposeWorkspace } from "../../src/components/ComposeWorkspace";
 import {
   buildSendMessageCommandInput,
+  createNewComposeFormDraft,
   createEmptyComposeFormDraft,
   prepareComposeDraftFromMessage,
+  syncComposeDraftAccount,
 } from "../../src/components/compose-form";
 
 const sampleAccounts = [
@@ -101,6 +103,36 @@ describe("compose workspace", () => {
       to: "dev@example.com",
       subject: "Launch update",
       body: "Shipping today.",
+    });
+  });
+
+  test("preserves a prepared draft when preview mode has no real accounts", () => {
+    const preparedDraft = {
+      accountId: "seed_primary-gmail",
+      to: "noreply@github.com",
+      subject: "Re: GitHub 安全验证码",
+      body: "\n\n在 2026-04-05T08:58:00Z，noreply@github.com 写道：\n> GitHub 安全验证码",
+    };
+
+    expect(syncComposeDraftAccount(preparedDraft, [])).toEqual(preparedDraft);
+  });
+
+  test("resets reply drafts back to a fresh compose draft", () => {
+    expect(
+      createNewComposeFormDraft(
+        {
+          accountId: "acct_primary-example-com",
+          to: "noreply@github.com",
+          subject: "Re: GitHub 安全验证码",
+          body: "\n\n在 2026-04-05T08:58:00Z，noreply@github.com 写道：\n> GitHub 安全验证码",
+        },
+        sampleAccounts,
+      ),
+    ).toEqual({
+      accountId: "acct_primary-example-com",
+      to: "",
+      subject: "",
+      body: "",
     });
   });
 

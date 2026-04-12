@@ -29,7 +29,7 @@ export function syncComposeDraftAccount(
   accounts: AccountSummary[],
 ): ComposeFormDraft {
   if (accounts.length === 0) {
-    return createEmptyComposeFormDraft();
+    return draft;
   }
 
   if (accounts.some((account) => account.id === draft.accountId)) {
@@ -40,6 +40,16 @@ export function syncComposeDraftAccount(
     ...draft,
     accountId: accounts[0].id,
   };
+}
+
+export function createNewComposeFormDraft(
+  draft: ComposeFormDraft,
+  accounts: AccountSummary[],
+): ComposeFormDraft {
+  return syncComposeDraftAccount(
+    createEmptyComposeFormDraft(draft.accountId),
+    accounts,
+  );
 }
 
 export function buildSendMessageCommandInput(

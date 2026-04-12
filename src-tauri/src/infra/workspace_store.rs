@@ -278,7 +278,8 @@ mod tests {
     #[test]
     fn saves_and_reads_workspace_snapshot_from_json_file() {
         let repository = JsonFileWorkspaceRepository::new(unique_test_file_path());
-        let snapshot = crate::infra::static_workspace::load_snapshot();
+        let snapshot =
+            crate::services::workspace_service::tests::sample_processing_snapshot("Workspace");
 
         repository
             .save_snapshot(&snapshot)

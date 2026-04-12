@@ -12,6 +12,7 @@ import {
   createEmptyAccountFormDraft,
 } from "../../src/components/account-form";
 import { Sidebar } from "../../src/components/Sidebar";
+import { sampleWorkspaceSnapshot } from "./workspace-fixture";
 
 describe("account workspace", () => {
   test("shows the accounts title for the accounts category", () => {
@@ -22,12 +23,21 @@ describe("account workspace", () => {
   });
 
   test("renders inbox rows with a checkbox and unread closed envelope affordance", () => {
-    const markup = renderToStaticMarkup(<MailWorkspace category="inbox" />);
+    const markup = renderToStaticMarkup(
+      <MailWorkspace category="inbox" snapshot={sampleWorkspaceSnapshot} />,
+    );
 
     expect(markup.includes("mail-item-checkbox")).toBe(true);
     expect(markup.includes("mail-item-envelope unread")).toBe(true);
     expect(markup.includes("mail-item-star")).toBe(true);
     expect(markup.includes("mail-item-date")).toBe(true);
+  });
+
+  test("falls back to an empty inbox state instead of bundled sample mail", () => {
+    const markup = renderToStaticMarkup(<MailWorkspace category="inbox" />);
+
+    expect(markup.includes("mail-item-checkbox")).toBe(false);
+    expect(markup.includes("还没有收件箱缓存")).toBe(true);
   });
 });
 
@@ -233,11 +243,38 @@ describe("site confirmation header", () => {
 
 describe("mail workspace reading controls", () => {
   test("shows the recent 48 hours scope, open original action, and read toggle", () => {
-    const markup = renderToStaticMarkup(<MailWorkspace category="verifications" />);
+    const markup = renderToStaticMarkup(
+      <MailWorkspace
+        category="verifications"
+        snapshot={sampleWorkspaceSnapshot}
+      />,
+    );
 
     expect(markup.includes("最近 48 小时")).toBe(true);
     expect(markup.includes("查看更早邮件")).toBe(true);
     expect(markup.includes("打开原始邮件")).toBe(true);
     expect(markup.includes("标记已读")).toBe(true);
+  });
+
+  test("hides reply and forward actions when compose flow is not exposed", () => {
+    const markup = renderToStaticMarkup(
+      <MailWorkspace
+        category="verifications"
+        snapshot={sampleWorkspaceSnapshot}
+      />,
+    );
+
+    expect(markup.includes(">回复<")).toBe(false);
+    expect(markup.includes(">转发<")).toBe(false);
+  });
+});
+
+describe("app shell", () => {
+  test("does not inject compose navigation or compose workspace entry points", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
+
+    expect(source.includes("ComposeWorkspace")).toBe(false);
+    expect(source.includes('getWorkspaceNavigationLabel("compose")')).toBe(false);
+    expect(source.includes('nextCategory === "compose"')).toBe(false);
   });
 });

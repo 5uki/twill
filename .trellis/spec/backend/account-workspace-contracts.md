@@ -289,14 +289,15 @@ syncWorkspace(): Promise<WorkspaceBootstrapSnapshot>
 ```
 
 边界说明：
-- `workspace bootstrap` / `load_workspace_bootstrap` 现在优先读取本地工作台缓存；缓存缺失时才退回共享种子文件 [workspace-bootstrap.json](../../../src/data/workspace-bootstrap.json)。
-- `load_workspace_bootstrap` 遇到缓存目录不可访问这类 `Storage` 错误时允许回退到共享种子；遇到缓存序列化损坏等非存储错误时应继续暴露错误，而不是静默吞掉。
-- `sync run` / `sync_workspace` 会读取当前已保存账户，并基于共享种子文件生成一份“已同步缓存快照”，然后写入本地缓存。
+- `workspace bootstrap` / `load_workspace_bootstrap` 现在优先读取本地工作台缓存；缓存缺失时才退回共享预览快照文件 [workspace-bootstrap.json](../../../src/data/workspace-bootstrap.json)。
+- 共享预览快照默认必须是**空工作台**，不能再内置样例邮件；浏览器预览和桌面端首次无缓存回退都只展示“请先同步”的空状态。
+- `load_workspace_bootstrap` 遇到缓存目录不可访问这类 `Storage` 错误时允许回退到共享预览快照；遇到缓存序列化损坏等非存储错误时应继续暴露错误，而不是静默吞掉。
+- `sync run` / `sync_workspace` 会读取当前已保存账户、系统安全存储中的密码，并通过真实 IMAP 拉取最近邮件后写入本地缓存。
 - 已同步缓存快照会补齐 `account_id`、`mailbox_id`、`mailbox_label`、`message_details`、`mailboxes` 与更完整的 `sync_status`，供 CLI 和后续功能查询。
-- `mailbox list`、`message list`、`message read` 与 `workspace bootstrap` 必须读取同一份缓存快照；缓存缺失时沿用同样的共享种子回退逻辑。
+- `mailbox list`、`message list`、`message read` 与 `workspace bootstrap` 必须读取同一份缓存快照；缓存缺失时沿用同样的共享预览快照回退逻辑。
 - 已同步缓存快照可以附带 `sync_status`，供桌面端顶部栏显示用户视角的同步状态，而不是暴露 `generated_at` 或底层实现术语。
-- 当前这份“已同步缓存快照”仍然是 **seeded sync source**，重点是打通 M2 的缓存、CLI、Tauri 和工作台读路径；它还不是最终的真实 IMAP 拉取结果。
-- 共享种子文件必须同时被前端 import、Rust `include_str!` 和 seeded sync source 消费，避免双份 mock / seed 漂移。
+- 当前桌面端“已同步缓存快照”来自 **真实 IMAP 同步源**；共享预览快照只保留给浏览器预览和首次无缓存回退。
+- 共享预览快照文件必须同时被前端 import 和 Rust `include_str!` 消费，避免浏览器预览与桌面端缓存字段漂移。
 - `loadWorkspaceBootstrap()` 在桌面端优先走 Tauri Command；不在 Tauri 环境或命令失败时，前端退回到打包内的同一份 JSON。
 - `generated_at` 可以保留在快照结构里供调试 / CLI 使用，但默认用户界面不应把它当作产品信息展示。
 
@@ -323,32 +324,32 @@ syncWorkspace(): Promise<WorkspaceBootstrapSnapshot>
 #### Good
 
 - 修改 `WorkspaceBootstrapSnapshot` 后，同时更新 Rust struct、TypeScript 类型、共享 JSON 和同步缓存读写逻辑。
-- 浏览器预览继续读取共享种子，桌面端优先读取同步缓存，两者字段结构保持同一合同。
+- 浏览器预览继续读取共享预览快照，桌面端优先读取同步缓存，两者字段结构保持同一合同。
 - `sync run` 成功后，`workspace bootstrap`、`mailbox list`、`message list`、`message read` 都能读取到同一份已持久化缓存。
 
 #### Base
 
-- 账户列表已经是真实数据；工作台读路径已经切到本地同步缓存，但缓存内容当前仍由 seeded source 生成。
-- 这意味着 M2 已经开始接管“同步 + 缓存 + 读路径 + 查询入口”，但真实 IMAP 拉取仍是下一条明确边界。
+- 账户列表和桌面端工作台读路径都已经是真实化；浏览器预览与首次无缓存回退现在只保留空工作台，不再展示伪造邮件。
+- 这意味着当前工作台已经接管“真实同步 + 缓存 + 读路径 + 查询入口”，浏览器预览也不会再误导成假收件箱。
 
 #### Bad
 
 - 在前端单独维护另一份 `mockMessages`。
-- 误把 `sync run` 当前的 seeded snapshot 当成真实 IMAP 收件箱同步。
+- 误把浏览器预览里的空工作台回退当成桌面端真实 IMAP 收件箱同步失败。
 - 改了 Rust struct 但没改 `src/lib/app-types.ts` 或共享 JSON。
 - 为 `mailbox list` / `message list` / `message read` 单独复制一套不同的数据源。
 
 ### 6. Tests Required
 
 - `cargo test --manifest-path src-tauri/Cargo.toml`
-  - 断言默认视图、导航项、消息组能从共享 JSON 成功加载。
+  - 断言默认视图、导航项和空工作台快照能从共享 JSON 成功加载。
   - 断言没有账户时 `sync_workspace` / `sync run` 会拒绝同步。
   - 断言同步后缓存可被 `workspace bootstrap` 重新读取。
-  - 断言 `mailbox list`、`message list`、`message read` 能读取静态种子或已同步缓存。
+  - 断言 `mailbox list`、`message list`、`message read` 能读取空预览快照或已同步缓存。
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- sync run --format json`
   - 断言 CLI 输出字段与 JSON 合同一致，并会写入本地缓存。
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- workspace bootstrap --format json`
-  - 断言 CLI 会优先读取已写入缓存，而不是直接退回共享种子。
+  - 断言 CLI 会优先读取已写入缓存，而不是直接退回共享预览快照。
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- mailbox list --format json`
   - 断言邮箱汇总来自同一份工作台快照。
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin twill-cli -- message list ... --format json`
@@ -363,12 +364,12 @@ syncWorkspace(): Promise<WorkspaceBootstrapSnapshot>
 #### Wrong
 
 - “先在 React 里手写一份 mock，Rust 那边以后再补。”
-- “`sync run` 既然能跑通，说明真实 IMAP 拉取已经完成。”
+- “浏览器预览里能看到空页面，所以桌面端真实 IMAP 一定坏了。”
 
 #### Correct
 
-- 共享种子快照只保留一份，前后端与 seeded sync source 共用。
-- 在产品说明和任务记录里明确：当前真实的是缓存读写链路、同步命令和缓存查询入口，真实 IMAP 邮件拉取仍未交付。
+- 共享预览快照只保留一份，前后端浏览器预览共用；桌面端同步缓存来自真实 IMAP。
+- 在产品说明和任务记录里明确：桌面端真实收信已交付，浏览器预览与首次无缓存回退只展示空工作台。
 ### 6.6. M3 消息处理流补充合同（2026-04-05）
 
 本轮在 M3 阅读首切片基础上，补齐“手动标记已处理 / 撤销已处理”的最小闭环。以下合同必须保持一致：

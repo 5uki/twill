@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import workspaceBootstrap from "../../src/data/workspace-bootstrap.json";
 import type {
   WorkspaceBootstrapSnapshot,
   WorkspaceMessageFilter,
@@ -17,8 +16,12 @@ import {
   resolveWorkspaceSiteContext,
   resolveSelectedWorkspaceMessage,
 } from "../../src/lib/workspace-reading";
+import {
+  createSampleWorkspaceSnapshot,
+  sampleWorkspaceSnapshot,
+} from "./workspace-fixture";
 
-const snapshot = workspaceBootstrap as WorkspaceBootstrapSnapshot;
+const snapshot = sampleWorkspaceSnapshot as WorkspaceBootstrapSnapshot;
 
 describe("workspace reading helpers", () => {
   test("defaults verification filters to the most recent 48 hours", () => {
@@ -103,7 +106,7 @@ describe("workspace reading helpers", () => {
       "read",
     );
     const inbox = nextSnapshot.mailboxes.find(
-      (mailbox) => mailbox.id === "seed_primary-gmail/inbox",
+      (mailbox) => mailbox.id === "acct_primary-example-com/inbox",
     );
 
     expect(nextSnapshot.selected_message.read_state).toBe("read");
@@ -112,7 +115,7 @@ describe("workspace reading helpers", () => {
       nextSnapshot.message_details.find((detail) => detail.id === "msg_github_security")
         ?.read_state,
     ).toBe("read");
-    expect(inbox?.unread_count).toBe(0);
+    expect(inbox?.unread_count).toBe(1);
   });
 
   test("resolves current site from a pasted url and returns candidates when not exact", () => {
@@ -153,7 +156,7 @@ describe("workspace reading helpers", () => {
   });
 
   test("filters verification view to the most recent 48 hours by default", () => {
-    const datedSnapshot = structuredClone(snapshot);
+    const datedSnapshot = createSampleWorkspaceSnapshot();
 
     datedSnapshot.generated_at = "2026-04-05T09:00:00Z";
     datedSnapshot.message_groups[0]!.items[1]!.received_at = "2026-04-01T08:41:00Z";
@@ -171,13 +174,13 @@ describe("workspace reading helpers", () => {
   test("opens a message by marking it read without changing processed status", () => {
     const result = openWorkspaceMessage(snapshot, "msg_github_security");
     const inbox = result.snapshot.mailboxes.find(
-      (mailbox) => mailbox.id === "seed_primary-gmail/inbox",
+      (mailbox) => mailbox.id === "acct_primary-example-com/inbox",
     );
 
     expect(result.detail.id).toBe("msg_github_security");
     expect(result.snapshot.selected_message.read_state).toBe("read");
     expect(result.snapshot.selected_message.status).toBe("pending");
-    expect(inbox?.unread_count).toBe(0);
+    expect(inbox?.unread_count).toBe(1);
   });
 
   test("opens the original message by returning the original url and marking it read", () => {

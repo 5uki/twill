@@ -24,6 +24,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-secure-storage = "1.4.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+imap = "2.4.1"
+mail-parser = "0.11.2"
+native-tls = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }

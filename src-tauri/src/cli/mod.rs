@@ -12,8 +12,10 @@ use crate::infra::account_preflight::LiveAccountConnectionTester;
 use crate::infra::account_secret_store::KeyringAccountSecretStore;
 use crate::infra::account_store::JsonFileAccountRepository;
 use crate::infra::compose_delivery::LiveComposeDeliveryClient;
+use crate::infra::imap_workspace_sync_source::{
+    LiveImapAccountSyncClient, LiveImapWorkspaceSyncSource,
+};
 use crate::infra::workspace_store::JsonFileWorkspaceRepository;
-use crate::infra::workspace_sync_source::SeededWorkspaceSyncSource;
 use crate::services::account_service::{
     self, AccountConnectionTester, AccountRepository, AccountSecretStore,
 };
@@ -50,7 +52,8 @@ where
     let workspace_repository = JsonFileWorkspaceRepository::new(default_workspace_store_path());
     let secret_store = KeyringAccountSecretStore::from_default_service_name();
     let tester = LiveAccountConnectionTester::default();
-    let sync_source = SeededWorkspaceSyncSource;
+    let sync_client = LiveImapAccountSyncClient::default();
+    let sync_source = LiveImapWorkspaceSyncSource::new(&secret_store, &sync_client);
     let delivery_client = LiveComposeDeliveryClient::default();
 
     run_with_args_and_dependencies_with_sender(
@@ -297,7 +300,7 @@ where
         }
         _ => Err(AppError::InvalidCliArgs {
             message: concat!(
-                "鐢ㄦ硶:\n",
+                "用法:\n",
                 "  workspace bootstrap [--format text|json]\n",
                 "  sync run [--format text|json]\n",
                 "  mailbox list [--format text|json]\n",
@@ -346,22 +349,26 @@ where
                 .map(|item| format!("- {} ({})", item.label, item.badge))
                 .collect::<Vec<_>>()
                 .join("\n");
+            let message_count = snapshot
+                .message_groups
+                .iter()
+                .flat_map(|group| group.items.iter())
+                .count();
+            let selected_subject =
+                if message_count == 0 || snapshot.selected_message.subject.trim().is_empty() {
+                    "暂无邮件"
+                } else {
+                    snapshot.selected_message.subject.as_str()
+                };
+            let sync_summary = snapshot
+                .sync_status
+                .as_ref()
+                .map(|status| status.summary.as_str())
+                .unwrap_or("当前没有缓存邮件");
 
             Ok(format!(
-                "Twill workspace bootstrap\n榛樿瑙嗗浘: Recent verification\n鐢熸垚鏃堕棿: {}\n瀵艰埅:\n{}\n褰撳墠閫変腑: {}\n楠岃瘉鐮? {}\n閾炬帴: {}",
-                snapshot.generated_at,
-                navigation,
-                snapshot.selected_message.subject,
-                snapshot
-                    .selected_message
-                    .extracted_code
-                    .as_deref()
-                    .unwrap_or("无"),
-                snapshot
-                    .selected_message
-                    .verification_link
-                    .as_deref()
-                    .unwrap_or("无")
+                "Twill workspace bootstrap\n默认视图: Recent verification\n生成时间: {}\n导航:\n{}\n缓存消息: {}\n当前选中: {}\n同步摘要: {}",
+                snapshot.generated_at, navigation, message_count, selected_subject, sync_summary,
             ))
         }
         OutputFormat::Json => {
@@ -400,7 +407,13 @@ where
         .sync_status
         .as_ref()
         .map(|status| status.summary.as_str())
-        .unwrap_or("鏀朵欢绠辩紦瀛樺凡鏇存柊");
+        .unwrap_or("收件箱缓存已更新");
+    let selected_subject =
+        if message_count == 0 || snapshot.selected_message.subject.trim().is_empty() {
+            "暂无邮件"
+        } else {
+            snapshot.selected_message.subject.as_str()
+        };
 
     match format {
         OutputFormat::Json => {
@@ -409,8 +422,8 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "鏀朵欢绠卞悓姝ュ凡瀹屾垚\n鐘舵€? {sync_summary}\n娑堟伅鏁? {message_count}\n楠岃瘉娑堟伅: {verification_count}\n褰撳墠閫変腑: {}",
-            snapshot.selected_message.subject
+            "收件箱同步已完成\n状态: {sync_summary}\n消息数: {message_count}\n验证消息: {verification_count}\n当前选中: {}",
+            selected_subject
         )),
     }
 }
@@ -512,16 +525,16 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "缂撳瓨娑堟伅璇︽儏\n涓婚: {}\n璐﹀彿: {}\n閭: {}\n绔欑偣: {}\n鎽樿: {}\n姝ｆ枃缂撳瓨: {}\n鍚屾鏃堕棿: {}",
+            "缓存消息详情\n主题: {}\n账号: {}\n邮箱: {}\n站点: {}\n摘要: {}\n正文缓存: {}\n同步时间: {}",
             message.subject,
             message.account_name,
             message.mailbox_label,
             message.site_hint,
             message.summary,
             if message.prefetched_body {
-                "宸查鎶撳彇"
+                "已预抓取"
             } else {
-                "浠呭厓鏁版嵁"
+                "仅元数据"
             },
             message.synced_at
         )),
@@ -545,7 +558,7 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "瀹稿弶澧﹀鈧☉鍫熶紖\nID: {}\n娑撳顣? {}\n瀹歌尪顕伴悩鑸碘偓? {}",
+            "已打开缓存消息\nID: {}\n主题: {}\n已读状态: {}",
             result.detail.id,
             result.detail.subject,
             if result.detail.read_state == crate::domain::workspace::MessageReadState::Read {
@@ -575,7 +588,7 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "瀹稿弶澧﹀鈧崢鐔奉潗闁喕娆nID: {}\n閸樼喎顫愰崗銉ュ經: {}",
+            "已打开原始邮件入口\nID: {}\n原始链接: {}",
             result.message_id, result.original_url
         )),
     }
@@ -609,7 +622,7 @@ where
             };
 
             Ok(format!(
-                "娑堟伅鐘舵€佸凡鏇存柊\n娑堟伅 ID: {message_id}\n缁撴灉: {action}\n褰撳墠閫変腑: {}",
+                "消息状态已更新\n消息 ID: {message_id}\n结果: {action}\n当前选中: {}",
                 snapshot.selected_message.subject
             ))
         }
@@ -675,17 +688,17 @@ where
         OutputFormat::Text => {
             let action_summary = match action {
                 WorkspaceMessageAction::CopyCode => format!(
-                    "宸插鍒堕獙璇佺爜: {}",
+                    "已复制验证码: {}",
                     result.copied_value.as_deref().unwrap_or("-")
                 ),
                 WorkspaceMessageAction::OpenLink => format!(
-                    "宸叉墦寮€閾炬帴: {}",
+                    "已打开链接: {}",
                     result.opened_url.as_deref().unwrap_or("-")
                 ),
             };
 
             Ok(format!(
-                "娑堟伅鍔ㄤ綔宸插畬鎴怽n娑堟伅 ID: {message_id}\n缁撴灉: {action_summary}\n褰撳墠鐘舵€? processed"
+                "消息动作已完成\n消息 ID: {message_id}\n结果: {action_summary}\n当前状态: processed"
             ))
         }
     }
@@ -711,7 +724,7 @@ where
         OutputFormat::Text => {
             if let Some(matched_site) = &resolution.matched_site {
                 return Ok(format!(
-                    "褰撳墠绔欑偣宸插尮閰峔n杈撳叆: {domain}\n褰掍竴鍖栧煙鍚? {}\n鍛戒腑绔欑偣: {} ({})",
+                    "当前站点已匹配\n输入: {domain}\n归一化域名: {}\n命中站点: {} ({})",
                     resolution.normalized_domain.as_deref().unwrap_or("-"),
                     matched_site.label,
                     matched_site.hostname
@@ -834,7 +847,7 @@ where
             })
         }
         OutputFormat::Text => Ok(format!(
-            "璐︽埛宸蹭繚瀛榎nID: {}\n鍚嶇О: {}\n閭: {}\n鍑嵁: {}\nIMAP: {}:{} ({:?})\nSMTP: {}:{} ({:?})",
+            "账户已保存\nID: {}\n名称: {}\n邮箱: {}\n凭据: {}\nIMAP: {}:{} ({:?})\nSMTP: {}:{} ({:?})",
             account.id,
             account.display_name,
             account.email,
@@ -935,8 +948,8 @@ where
 
 fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
     let status = match result.status {
-        AccountConnectionStatus::Passed => "閫氳繃",
-        AccountConnectionStatus::Failed => "澶辫触",
+        AccountConnectionStatus::Passed => "通过",
+        AccountConnectionStatus::Failed => "失败",
     };
 
     let checks = result
@@ -949,8 +962,8 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
                 AccountConnectionCheckTarget::Smtp => "SMTP",
             };
             let check_status = match check.status {
-                AccountConnectionStatus::Passed => "閫氳繃",
-                AccountConnectionStatus::Failed => "澶辫触",
+                AccountConnectionStatus::Passed => "通过",
+                AccountConnectionStatus::Failed => "失败",
             };
 
             format!("- {target}: {check_status} | {}", check.message)
@@ -959,7 +972,7 @@ fn format_account_test_result(result: &AccountConnectionTestResult) -> String {
         .join("\n");
 
     format!(
-        "璐︽埛杩炴帴瀹炴椂鎺㈡祴\n鐘舵€? {status}\n缁撹: {}\n{checks}",
+        "账户连接实时探测\n状态: {status}\n结论: {}\n{checks}",
         result.summary
     )
 }
@@ -1254,15 +1267,19 @@ mod tests {
     use crate::domain::error::AppError;
     use crate::infra::account_preflight::LiveAccountConnectionTester;
     use crate::infra::account_store::JsonFileAccountRepository;
+    use crate::infra::imap_workspace_sync_source::{
+        FetchedAccountMailboxSnapshot, FetchedMailboxMessage, ImapAccountSyncClient,
+        LiveImapWorkspaceSyncSource,
+    };
     use crate::infra::workspace_store::JsonFileWorkspaceRepository;
-    use crate::infra::workspace_sync_source::SeededWorkspaceSyncSource;
     use crate::services::account_service::AccountSecretStore;
     use crate::services::compose_service::{
         MessageDeliveryClient, MessageDeliveryReceipt, MessageDeliveryRequest,
     };
+    use crate::services::workspace_service::WorkspaceSyncSource;
     use serde_json::Value;
     use std::cell::RefCell;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::net::TcpListener;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1304,6 +1321,41 @@ mod tests {
         requests: RefCell<Vec<MessageDeliveryRequest>>,
     }
 
+    #[derive(Default)]
+    struct FakeImapAccountSyncClient {
+        snapshots: RefCell<BTreeMap<String, FetchedAccountMailboxSnapshot>>,
+    }
+
+    impl ImapAccountSyncClient for FakeImapAccountSyncClient {
+        fn fetch_account_snapshot(
+            &self,
+            account: &crate::domain::account::AccountSummary,
+            _password: &str,
+        ) -> Result<FetchedAccountMailboxSnapshot, AppError> {
+            self.snapshots
+                .borrow()
+                .get(&account.id)
+                .cloned()
+                .ok_or_else(|| AppError::Storage {
+                    message: format!("缺少账号 {} 的测试收件箱快照", account.id),
+                })
+        }
+    }
+
+    struct FixedWorkspaceSyncSource {
+        snapshot: crate::domain::workspace::WorkspaceBootstrapSnapshot,
+    }
+
+    impl WorkspaceSyncSource for FixedWorkspaceSyncSource {
+        fn build_snapshot(
+            &self,
+            _accounts: &[crate::domain::account::AccountSummary],
+            _previous_snapshot: Option<&crate::domain::workspace::WorkspaceBootstrapSnapshot>,
+        ) -> Result<crate::domain::workspace::WorkspaceBootstrapSnapshot, AppError> {
+            Ok(self.snapshot.clone())
+        }
+    }
+
     impl MessageDeliveryClient for RecordingDeliveryClient {
         fn send_message(
             &self,
@@ -1325,9 +1377,60 @@ mod tests {
             .expect("命令应执行成功");
 
         assert!(
-            output.contains("Recent verification"),
-            "鏂囨湰杈撳嚭鑷冲皯瑕佸寘鍚粯璁ゅ伐浣滃彴瑙嗗浘"
+            output.contains("默认视图: Recent verification"),
+            "文本输出至少要包含默认工作台视图"
         );
+        assert!(output.contains("生成时间:"));
+        assert!(output.contains("缓存消息: 0"));
+        assert!(output.contains("当前没有缓存邮件"));
+    }
+
+    #[test]
+    fn account_test_text_output_uses_readable_status_labels() {
+        let imap = TcpListener::bind("127.0.0.1:0").expect("应能绑定 IMAP 测试端口");
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
+
+        let output = run_with_args_and_test_store(
+            [
+                "account",
+                "test",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--imap-host",
+                "127.0.0.1",
+                "--imap-port",
+                &imap
+                    .local_addr()
+                    .expect("应能读取 IMAP 地址")
+                    .port()
+                    .to_string(),
+                "--imap-security",
+                "none",
+                "--smtp-host",
+                "127.0.0.1",
+                "--smtp-port",
+                &smtp
+                    .local_addr()
+                    .expect("应能读取 SMTP 地址")
+                    .port()
+                    .to_string(),
+                "--smtp-security",
+                "none",
+                "--format",
+                "text",
+            ],
+            unique_store_path(),
+        )
+        .expect("账户探测文本输出应成功");
+
+        assert!(output.contains("账户连接实时探测"));
+        assert!(output.contains("状态: 通过"));
+        assert!(output.contains("IMAP: 通过"));
+        assert!(output.contains("SMTP: 通过"));
     }
 
     #[test]
@@ -1338,7 +1441,7 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(workspace_path);
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
 
         run_with_args_and_dependencies(
             [
@@ -1384,8 +1487,8 @@ mod tests {
             &sync_source,
         )
         .expect("列出账户应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
-        let metadata = fs::read_to_string(&store_path).expect("鍏冩暟鎹枃浠跺簲鍙");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
+        let metadata = fs::read_to_string(&store_path).expect("元数据文件应可读取");
 
         assert_eq!(parsed.as_array().map(|items| items.len()), Some(1));
         assert_eq!(parsed[0]["credential_state"], "stored");
@@ -1435,7 +1538,7 @@ mod tests {
     #[test]
     fn reports_failed_live_probe_for_unreachable_ports() {
         let unreachable_imap_port = reserve_unused_port();
-        let smtp = TcpListener::bind("127.0.0.1:0").expect("搴旇兘缁戝畾 SMTP 娴嬭瘯绔彛");
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
 
         let output = run_with_args_and_test_store(
             [
@@ -1458,7 +1561,7 @@ mod tests {
                 "--smtp-port",
                 &smtp
                     .local_addr()
-                    .expect("搴旇兘璇诲彇 SMTP 鍦板潃")
+                    .expect("应能读取 SMTP 地址")
                     .port()
                     .to_string(),
                 "--smtp-security",
@@ -1468,8 +1571,8 @@ mod tests {
             ],
             unique_store_path(),
         )
-        .expect("瀹炴椂鎺㈡祴鍛戒护搴旇繑鍥炵粨鏋勫寲缁撴灉");
-        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        .expect("实时探测命令应返回结构化结果");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert_eq!(parsed["status"], "failed");
         assert!(
@@ -1482,8 +1585,8 @@ mod tests {
 
     #[test]
     fn reports_live_probe_success_when_servers_are_reachable() {
-        let imap = TcpListener::bind("127.0.0.1:0").expect("搴旇兘缁戝畾 IMAP 娴嬭瘯绔彛");
-        let smtp = TcpListener::bind("127.0.0.1:0").expect("搴旇兘缁戝畾 SMTP 娴嬭瘯绔彛");
+        let imap = TcpListener::bind("127.0.0.1:0").expect("应能绑定 IMAP 测试端口");
+        let smtp = TcpListener::bind("127.0.0.1:0").expect("应能绑定 SMTP 测试端口");
 
         let output = run_with_args_and_test_store(
             [
@@ -1500,7 +1603,7 @@ mod tests {
                 "--imap-port",
                 &imap
                     .local_addr()
-                    .expect("搴旇兘璇诲彇 IMAP 鍦板潃")
+                    .expect("应能读取 IMAP 地址")
                     .port()
                     .to_string(),
                 "--imap-security",
@@ -1510,7 +1613,7 @@ mod tests {
                 "--smtp-port",
                 &smtp
                     .local_addr()
-                    .expect("搴旇兘璇诲彇 SMTP 鍦板潃")
+                    .expect("应能读取 SMTP 地址")
                     .port()
                     .to_string(),
                 "--smtp-security",
@@ -1521,7 +1624,7 @@ mod tests {
             unique_store_path(),
         )
         .expect("实时探测成功时应返回结构化结果");
-        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert_eq!(parsed["status"], "passed");
         assert!(
@@ -1538,7 +1641,7 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
         let delivery_client = RecordingDeliveryClient::default();
 
         run_with_args_and_dependencies(
@@ -1612,24 +1715,21 @@ mod tests {
 
     #[test]
     fn compose_prepare_returns_prefilled_reply_draft() {
-        let output = run_with_args_and_test_store(
-            [
-                "compose",
-                "prepare",
-                "--mode",
-                "reply",
-                "--source-message",
-                "msg_github_security",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
+        let output = run_with_args_and_sample_workspace([
+            "compose",
+            "prepare",
+            "--mode",
+            "reply",
+            "--source-message",
+            "msg_github_security",
+            "--format",
+            "json",
+        ])
         .expect("reply compose prepare 应成功");
         let parsed = serde_json::from_str::<Value>(&output).expect("compose 输出应为 JSON");
 
         assert_eq!(parsed["mode"], "reply");
-        assert_eq!(parsed["account_id"], "seed_primary-gmail");
+        assert_eq!(parsed["account_id"], "acct_primary-example-com");
         assert_eq!(parsed["to"], "noreply@github.com");
         assert_eq!(parsed["subject"], "Re: GitHub 安全验证码");
         assert!(
@@ -1641,19 +1741,16 @@ mod tests {
 
     #[test]
     fn compose_prepare_returns_forward_draft_with_empty_recipient() {
-        let output = run_with_args_and_test_store(
-            [
-                "compose",
-                "prepare",
-                "--mode",
-                "forward",
-                "--source-message",
-                "msg_linear_verify",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
+        let output = run_with_args_and_sample_workspace([
+            "compose",
+            "prepare",
+            "--mode",
+            "forward",
+            "--source-message",
+            "msg_linear_verify",
+            "--format",
+            "json",
+        ])
         .expect("forward compose prepare 应成功");
         let parsed = serde_json::from_str::<Value>(&output).expect("compose 输出应为 JSON");
 
@@ -1693,7 +1790,7 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
 
         run_with_args_and_dependencies(
             [
@@ -1737,8 +1834,7 @@ mod tests {
             &sync_source,
         )
         .expect("同步命令应成功");
-        let synced =
-            serde_json::from_str::<Value>(&synced_output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        let synced = serde_json::from_str::<Value>(&synced_output).expect("输出应为合法 JSON");
 
         assert_eq!(synced["navigation"][3]["badge"], 1);
         assert_eq!(
@@ -1754,9 +1850,9 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("璇诲彇宸ヤ綔鍙板揩鐓у簲鎴愬姛");
+        .expect("同步后应能读取工作台快照");
         let bootstrap =
-            serde_json::from_str::<Value>(&bootstrap_output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+            serde_json::from_str::<Value>(&bootstrap_output).expect("输出应为合法 JSON");
 
         assert_eq!(
             bootstrap["message_groups"][0]["items"][1]["account_name"],
@@ -1764,7 +1860,7 @@ mod tests {
         );
         assert!(
             workspace_store_path.exists(),
-            "鍚屾瀹屾垚鍚庡繀椤绘妸蹇収鎸佷箙鍖栧埌鏈湴缂撳瓨"
+            "同步完成后必须把快照持久化到本地缓存"
         );
     }
 
@@ -1774,7 +1870,7 @@ mod tests {
             ["workspace", "bootstrap", "--format", "yaml"],
             unique_store_path(),
         )
-        .expect_err("涓嶆敮鎸佺殑鏍煎紡蹇呴』鎶ラ敊");
+        .expect_err("不支持的格式必须报错");
 
         assert_eq!(
             error,
@@ -1785,26 +1881,87 @@ mod tests {
     }
 
     #[test]
-    fn mailbox_list_reads_seed_snapshot_when_workspace_cache_is_empty() {
+    fn sync_run_supports_live_imap_workspace_source() {
+        let repository = JsonFileAccountRepository::new(unique_store_path());
+        let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
+        let secret_store = InMemorySecretStore::default();
+        let tester = LiveAccountConnectionTester::default();
+        let sync_client = FakeImapAccountSyncClient::default();
+        sync_client.snapshots.borrow_mut().insert(
+            "acct_primary-example-com".to_string(),
+            FetchedAccountMailboxSnapshot {
+                folders: vec!["Inbox".to_string()],
+                messages: vec![FetchedMailboxMessage {
+                    mailbox_kind: crate::domain::workspace::WorkspaceMailboxKind::Inbox,
+                    mailbox_label: "Inbox".to_string(),
+                    remote_id: "<github-security@example.com>".to_string(),
+                    read_state: crate::domain::workspace::MessageReadState::Unread,
+                    raw_message: sample_live_sync_message(),
+                }],
+            },
+        );
+        let sync_source = LiveImapWorkspaceSyncSource::new(&secret_store, &sync_client);
+
+        run_with_args_and_dependencies(
+            [
+                "account",
+                "add",
+                "--name",
+                "Primary Gmail",
+                "--email",
+                "primary@example.com",
+                "--login",
+                "primary@example.com",
+                "--password",
+                "app-password",
+                "--imap-host",
+                "imap.example.com",
+                "--imap-port",
+                "993",
+                "--imap-security",
+                "tls",
+                "--smtp-host",
+                "smtp.example.com",
+                "--smtp-port",
+                "587",
+                "--smtp-security",
+                "start_tls",
+            ],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("新增账号应成功");
+
+        let output = run_with_args_and_dependencies(
+            ["sync", "run", "--format", "json"],
+            &repository,
+            &workspace_repository,
+            &secret_store,
+            &tester,
+            &sync_source,
+        )
+        .expect("真实 IMAP 同步命令应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
+
+        assert_eq!(parsed["selected_message"]["subject"], "GitHub 安全验证码");
+        assert_eq!(parsed["message_details"][0]["site_hint"], "github.com");
+        assert_eq!(parsed["sync_status"]["folders"][0], "Inbox");
+    }
+
+    #[test]
+    fn mailbox_list_returns_empty_when_workspace_cache_is_empty() {
         let output = run_with_args_and_test_store(
             ["mailbox", "list", "--format", "json"],
             unique_store_path(),
         )
         .expect("读取邮箱列表应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
-        let mailboxes = parsed
-            .as_array()
-            .expect("閭鍒楄〃杈撳嚭搴旇鏄?JSON 鏁扮粍");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
+        let mailboxes = parsed.as_array().expect("邮箱列表输出应是 JSON 数组");
 
-        assert_eq!(mailboxes.len(), 3);
-        assert!(mailboxes.iter().any(|mailbox| {
-            mailbox["account_id"] == "seed_primary-gmail" && mailbox["label"] == "Inbox"
-        }));
-        assert!(
-            mailboxes
-                .iter()
-                .any(|mailbox| mailbox["kind"] == "spam_junk")
-        );
+        assert!(mailboxes.is_empty());
     }
 
     #[test]
@@ -1813,7 +1970,7 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
 
         run_with_args_and_dependencies(
             [
@@ -1877,11 +2034,9 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("鎸夎处鍙蜂笌閭绛涢€夋秷鎭簲鎴愬姛");
-        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
-        let messages = parsed
-            .as_array()
-            .expect("娑堟伅鍒楄〃杈撳嚭搴旇鏄?JSON 鏁扮粍");
+        .expect("按账号与邮箱筛选消息应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
+        let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["id"], "msg_notion_welcome");
@@ -1891,22 +2046,18 @@ mod tests {
 
     #[test]
     fn message_list_supports_category_and_query_filters() {
-        let output = run_with_args_and_test_store(
-            [
-                "message",
-                "list",
-                "--category",
-                "security",
-                "--query",
-                "362149",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
+        let output = run_with_args_and_sample_workspace([
+            "message",
+            "list",
+            "--category",
+            "security",
+            "--query",
+            "362149",
+            "--format",
+            "json",
+        ])
         .expect("分类和查询筛选应成功");
-        let parsed =
-            serde_json::from_str::<Value>(&output).expect("鏉堟挸鍤箛鍛淬€忛弰顖氭値濞?JSON");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
         let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
 
         assert_eq!(messages.len(), 1);
@@ -1915,20 +2066,16 @@ mod tests {
 
     #[test]
     fn message_list_supports_exact_site_filter() {
-        let output = run_with_args_and_test_store(
-            [
-                "message",
-                "list",
-                "--site",
-                "github.com",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("閹稿鐝悙鍦翱绾喛绻冨銈嗙Х閹垰绨查幋鎰");
-        let parsed = serde_json::from_str::<Value>(&output)
-            .expect("閺夊牊鎸搁崵顓＄疀閸涙番鈧繘寮伴姘€ゆ繛?JSON");
+        let output = run_with_args_and_sample_workspace([
+            "message",
+            "list",
+            "--site",
+            "github.com",
+            "--format",
+            "json",
+        ])
+        .expect("按站点筛选消息应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
         let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
 
         assert_eq!(messages.len(), 1);
@@ -1937,34 +2084,27 @@ mod tests {
 
     #[test]
     fn site_context_resolve_returns_exact_match_and_candidates() {
-        let exact_output = run_with_args_and_test_store(
-            [
-                "site-context",
-                "resolve",
-                "--domain",
-                "https://www.github.com/login",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("缁旀瑧鍋ｇ划鍓р€橀崠褰掑帳閸涙垝鎶ゆ惔鏃€鍨氶崝?");
-        let exact = serde_json::from_str::<Value>(&exact_output)
-            .expect("閺夊牊鎸搁崵顓＄疀閸涙番鈧繘寮伴姘€ゆ繛?JSON");
-        let candidate_output = run_with_args_and_test_store(
-            [
-                "site-context",
-                "resolve",
-                "--domain",
-                "lin",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("閸婃瑩鈧鐝悙纭呅掗弸鎰嚒娴犮倕绨查幋鎰");
-        let candidate = serde_json::from_str::<Value>(&candidate_output)
-            .expect("閺夊牊鎸搁崵顓＄疀閸涙番鈧繘寮伴姘€ゆ繛?JSON");
+        let exact_output = run_with_args_and_sample_workspace([
+            "site-context",
+            "resolve",
+            "--domain",
+            "https://www.github.com/login",
+            "--format",
+            "json",
+        ])
+        .expect("精确站点匹配应成功");
+        let exact = serde_json::from_str::<Value>(&exact_output).expect("输出应为合法 JSON");
+        let candidate_output = run_with_args_and_sample_workspace([
+            "site-context",
+            "resolve",
+            "--domain",
+            "lin",
+            "--format",
+            "json",
+        ])
+        .expect("候选站点解析应成功");
+        let candidate =
+            serde_json::from_str::<Value>(&candidate_output).expect("输出应为合法 JSON");
 
         assert_eq!(exact["normalized_domain"], "github.com");
         assert_eq!(exact["matched_site"]["hostname"], "github.com");
@@ -1979,31 +2119,40 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
-        let seed_snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/data/workspace-bootstrap.json");
-        let mut snapshot = serde_json::from_str::<Value>(
-            &fs::read_to_string(&seed_snapshot_path).expect("seed snapshot 鎼存棁顕氶崣顖濐嚢"),
-        )
-        .expect("seed snapshot 韫囧懘銆忛弰顖氭値濞?JSON");
+        let sync_source = sample_sync_source();
+        let mut snapshot =
+            crate::services::workspace_service::tests::sample_processing_snapshot("Workspace");
 
-        snapshot["generated_at"] = Value::String("2026-04-05T09:00:00Z".to_string());
-        snapshot["message_groups"][0]["items"][0]["received_at"] =
-            Value::String("2026-04-01T08:58:00Z".to_string());
-        snapshot["message_details"][0]["received_at"] =
-            Value::String("2026-04-01T08:58:00Z".to_string());
+        snapshot.generated_at = "2026-04-05T09:00:00Z".to_string();
+
+        if let Some(item) = snapshot
+            .message_groups
+            .iter_mut()
+            .flat_map(|group| group.items.iter_mut())
+            .find(|item| item.id == "msg_github_security")
+        {
+            item.received_at = "2026-04-01T08:58:00Z".to_string();
+        }
+
+        if let Some(detail) = snapshot
+            .message_details
+            .iter_mut()
+            .find(|detail| detail.id == "msg_github_security")
+        {
+            detail.received_at = "2026-04-01T08:58:00Z".to_string();
+        }
 
         fs::create_dir_all(
             workspace_store_path
                 .parent()
-                .expect("workspace 璺緞搴斿寘鍚埗鐩綍"),
+                .expect("workspace 路径应包含父目录"),
         )
-        .expect("娴嬭瘯鐩綍搴斿彲鍒涘缓");
+        .expect("测试目录应可创建");
         fs::write(
             &workspace_store_path,
             serde_json::to_string_pretty(&snapshot).expect("快照 JSON 应可序列化"),
         )
-        .expect("娴嬭瘯蹇収搴斿彲鍐欏叆");
+        .expect("测试快照应可写入");
 
         let output = run_with_args_and_dependencies(
             [
@@ -2022,9 +2171,8 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("recent-hours 缁涙盯鈧绨查幋鎰");
-        let parsed = serde_json::from_str::<Value>(&output)
-            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+        .expect("recent-hours 筛选应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
         let messages = parsed.as_array().expect("消息列表输出应是 JSON 数组");
 
         assert_eq!(messages.len(), 1);
@@ -2033,22 +2181,18 @@ mod tests {
 
     #[test]
     fn message_action_marks_processed_and_removes_matching_extract() {
-        let output = run_with_args_and_test_store(
-            [
-                "message",
-                "action",
-                "--id",
-                "msg_github_security",
-                "--action",
-                "copy_code",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("楂樹环鍊煎姩浣滃懡浠ゅ簲鎴愬姛");
-        let parsed =
-            serde_json::from_str::<Value>(&output).expect("鍛戒护杈撳嚭蹇呴』鏄悎娉?JSON");
+        let output = run_with_args_and_sample_workspace([
+            "message",
+            "action",
+            "--id",
+            "msg_github_security",
+            "--action",
+            "copy_code",
+            "--format",
+            "json",
+        ])
+        .expect("消息动作命令应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert_eq!(parsed["action"], "copy_code");
         assert_eq!(parsed["copied_value"], "362149");
@@ -2065,20 +2209,16 @@ mod tests {
 
     #[test]
     fn message_open_marks_it_read_and_returns_updated_snapshot() {
-        let output = run_with_args_and_test_store(
-            [
-                "message",
-                "open",
-                "--id",
-                "msg_github_security",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("open message 閸涙垝鎶ゆ惔鏃€鍨氶崝?");
-        let parsed = serde_json::from_str::<Value>(&output)
-            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+        let output = run_with_args_and_sample_workspace([
+            "message",
+            "open",
+            "--id",
+            "msg_github_security",
+            "--format",
+            "json",
+        ])
+        .expect("open message 应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert_eq!(parsed["detail"]["id"], "msg_github_security");
         assert_eq!(parsed["detail"]["read_state"], "read");
@@ -2087,20 +2227,16 @@ mod tests {
 
     #[test]
     fn message_original_returns_original_url_and_marks_message_read() {
-        let output = run_with_args_and_test_store(
-            [
-                "message",
-                "original",
-                "--id",
-                "msg_linear_verify",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("open original 閸涙垝鎶ゆ惔鏃€鍨氶崝?");
-        let parsed = serde_json::from_str::<Value>(&output)
-            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+        let output = run_with_args_and_sample_workspace([
+            "message",
+            "original",
+            "--id",
+            "msg_linear_verify",
+            "--format",
+            "json",
+        ])
+        .expect("open original 应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert!(
             parsed["original_url"]
@@ -2115,20 +2251,16 @@ mod tests {
 
     #[test]
     fn site_context_confirm_adds_manual_site_to_snapshot() {
-        let output = run_with_args_and_test_store(
-            [
-                "site-context",
-                "confirm",
-                "--domain",
-                "https://vercel.com/login",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
-        .expect("confirm site 閸涙垝鎶ゆ惔鏃€鍨氶崝?");
-        let parsed = serde_json::from_str::<Value>(&output)
-            .expect("閸涙垝鎶ゆ潏鎾冲毉韫囧懘銆忛弰顖氭値濞?JSON");
+        let output = run_with_args_and_sample_workspace([
+            "site-context",
+            "confirm",
+            "--domain",
+            "https://vercel.com/login",
+            "--format",
+            "json",
+        ])
+        .expect("confirm site 应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert!(
             parsed["site_summaries"]
@@ -2145,7 +2277,9 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
+
+        write_sample_workspace_snapshot(&workspace_store_path);
 
         let output = run_with_args_and_dependencies(
             [
@@ -2164,9 +2298,8 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("閺嶅洩顔囧鎻掝槱閻炲棗绨查幋鎰");
-        let parsed =
-            serde_json::from_str::<Value>(&output).expect("鏉堟挸鍤箛鍛淬€忛弰顖氭値濞?JSON");
+        .expect("标记消息状态应成功");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert_eq!(parsed["selected_message"]["status"], "processed");
         assert_eq!(
@@ -2194,9 +2327,9 @@ mod tests {
             &tester,
             &sync_source,
         )
-        .expect("鎼存棁顕氶懗鍊燁嚢閸掓澘鍑￠弴瀛樻煀閻ㄥ嫮绱︾€涙濮搁幀?");
-        let persisted = serde_json::from_str::<Value>(&persisted_output)
-            .expect("鏉堟挸鍤箛鍛淬€忛弰顖氭値濞?JSON");
+        .expect("持久化后的消息读取应成功");
+        let persisted =
+            serde_json::from_str::<Value>(&persisted_output).expect("输出应为合法 JSON");
 
         assert_eq!(persisted["status"], "processed");
         assert!(workspace_store_path.exists());
@@ -2210,7 +2343,9 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path.clone());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
+
+        write_sample_workspace_snapshot(&workspace_store_path);
 
         let output = run_with_args_and_dependencies(
             [
@@ -2260,20 +2395,17 @@ mod tests {
     }
 
     #[test]
-    fn message_read_returns_prefetched_detail_from_seed_snapshot() {
-        let output = run_with_args_and_test_store(
-            [
-                "message",
-                "read",
-                "--id",
-                "msg_linear_verify",
-                "--format",
-                "json",
-            ],
-            unique_store_path(),
-        )
+    fn message_read_returns_prefetched_detail_from_cached_sample_workspace() {
+        let output = run_with_args_and_sample_workspace([
+            "message",
+            "read",
+            "--id",
+            "msg_linear_verify",
+            "--format",
+            "json",
+        ])
         .expect("读取缓存消息详情应成功");
-        let parsed = serde_json::from_str::<Value>(&output).expect("杈撳嚭蹇呴』鏄悎娉?JSON");
+        let parsed = serde_json::from_str::<Value>(&output).expect("输出应为合法 JSON");
 
         assert_eq!(parsed["id"], "msg_linear_verify");
         assert_eq!(parsed["site_hint"], "linear.app");
@@ -2284,7 +2416,7 @@ mod tests {
     fn unique_store_path() -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("绯荤粺鏃堕棿搴旀櫄浜?epoch")
+            .expect("系统时间应晚于 epoch")
             .as_nanos();
 
         std::env::temp_dir()
@@ -2295,7 +2427,7 @@ mod tests {
     fn unique_workspace_store_path() -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("绯荤粺鏃堕棿搴旀櫄浜?epoch")
+            .expect("系统时间应晚于 epoch")
             .as_nanos();
 
         std::env::temp_dir()
@@ -2303,12 +2435,57 @@ mod tests {
             .join(format!("cli-workspace-{suffix}.json"))
     }
 
+    fn sample_live_sync_message() -> Vec<u8> {
+        concat!(
+            "From: GitHub <noreply@github.com>\r\n",
+            "Date: Sat, 05 Apr 2026 08:58:00 +0000\r\n",
+            "Subject: GitHub 安全验证码\r\n",
+            "Message-ID: <github-security@example.com>\r\n",
+            "Content-Type: text/plain; charset=utf-8\r\n",
+            "\r\n",
+            "你的 GitHub 登录验证码是 362149。\r\n",
+            "也可以点击 https://github.com/login/device 完成验证。\r\n",
+        )
+        .as_bytes()
+        .to_vec()
+    }
+
+    fn sample_sync_source() -> FixedWorkspaceSyncSource {
+        FixedWorkspaceSyncSource {
+            snapshot: crate::services::workspace_service::tests::sample_processing_snapshot(
+                "Synced",
+            ),
+        }
+    }
+
+    fn write_sample_workspace_snapshot(path: &std::path::Path) {
+        let snapshot =
+            crate::services::workspace_service::tests::sample_processing_snapshot("Workspace");
+
+        fs::create_dir_all(path.parent().expect("workspace 路径应包含父目录"))
+            .expect("测试目录应可创建");
+        fs::write(
+            path,
+            serde_json::to_string_pretty(&snapshot).expect("快照 JSON 应可序列化"),
+        )
+        .expect("测试快照应可写入");
+    }
+
+    fn run_with_args_and_sample_workspace<I, S>(args: I) -> Result<String, AppError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let store_path = unique_store_path();
+        let workspace_store_path = unique_workspace_store_path();
+        write_sample_workspace_snapshot(&workspace_store_path);
+
+        run_with_args_and_test_workspace(args, store_path, workspace_store_path)
+    }
+
     fn reserve_unused_port() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("搴旇兘鍒嗛厤绌洪棽绔彛");
-        let port = listener
-            .local_addr()
-            .expect("搴旇兘璇诲彇鏈湴鍦板潃")
-            .port();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("应能分配空闲端口");
+        let port = listener.local_addr().expect("应能读取本地地址").port();
         drop(listener);
         port
     }
@@ -2325,7 +2502,7 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(unique_workspace_store_path());
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
 
         run_with_args_and_dependencies(
             args,
@@ -2350,7 +2527,7 @@ mod tests {
         let workspace_repository = JsonFileWorkspaceRepository::new(workspace_store_path);
         let secret_store = InMemorySecretStore::default();
         let tester = LiveAccountConnectionTester::default();
-        let sync_source = SeededWorkspaceSyncSource;
+        let sync_source = sample_sync_source();
 
         run_with_args_and_dependencies(
             args,

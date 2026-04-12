@@ -94,7 +94,11 @@ export function ComposeWorkspace({
 
         {accounts.length === 0 ? (
           <div className="accounts-empty">
-            <Text>请先到“账号管理”中添加至少一个账号，再回来发送邮件。</Text>
+            <Text>
+              {runtimeAvailable
+                ? "请先到“账号管理”中添加至少一个账号，再回来发送邮件。"
+                : "浏览器预览不会加载真实账号列表，这里只展示写信界面和预填结果。"}
+            </Text>
           </div>
         ) : null}
 

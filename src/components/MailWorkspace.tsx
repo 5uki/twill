@@ -441,12 +441,22 @@ export function MailWorkspace({
       ? snapshot.selected_message
       : null);
   const showExtracts = category === "verifications" && extracts.length > 0;
+  const isEmptyWorkspace =
+    snapshot.mailboxes.length === 0 && snapshot.message_groups.length === 0;
   const emptyTitle =
-    category === "verifications" ? "没有匹配的验证邮件" : "没有匹配的收件箱邮件";
+    isEmptyWorkspace
+      ? category === "verifications"
+        ? "还没有验证邮件缓存"
+        : "还没有收件箱缓存"
+      : category === "verifications"
+        ? "没有匹配的验证邮件"
+        : "没有匹配的收件箱邮件";
   const emptyDescription =
-    category === "verifications"
-      ? "可以换一个关键字，或切回“全部”分类看看更早的验证消息。"
-      : "可以尝试更短的关键字，或切换到其他分类查看同步结果。";
+    isEmptyWorkspace
+      ? "添加账号后点击“立即同步”，这里会显示真实收件箱结果。"
+      : category === "verifications"
+        ? "可以换一个关键字，或切回“全部”分类看看更早的验证消息。"
+        : "可以尝试更短的关键字，或切换到其他分类查看同步结果。";
 
   return (
     <div className="workspace-content">
@@ -579,8 +589,12 @@ export function MailWorkspace({
             />
           ) : (
             <EmptyWorkspaceState
-              description="列表结果出来后，点开一封邮件就可以直接查看摘要、正文和验证码动作。"
-              heading="选择一封邮件开始阅读"
+              description={
+                isEmptyWorkspace
+                  ? "同步完成后，这里会展示摘要、正文、验证码和原始邮件入口。"
+                  : "列表结果出来后，点开一封邮件就可以直接查看摘要、正文和验证码动作。"
+              }
+              heading={isEmptyWorkspace ? "同步后开始阅读邮件" : "选择一封邮件开始阅读"}
             />
           )}
         </aside>
@@ -753,22 +767,26 @@ function MessageDetailCard({
             打开原始邮件
           </button>
         ) : null}
-        <button
-          className="message-detail-action secondary"
-          disabled={isActionLoading}
-          type="button"
-          onClick={() => void onReplyMessage?.(message)}
-        >
-          回复
-        </button>
-        <button
-          className="message-detail-action secondary"
-          disabled={isActionLoading}
-          type="button"
-          onClick={() => void onForwardMessage?.(message)}
-        >
-          转发
-        </button>
+        {onReplyMessage ? (
+          <button
+            className="message-detail-action secondary"
+            disabled={isActionLoading}
+            type="button"
+            onClick={() => void onReplyMessage(message)}
+          >
+            回复
+          </button>
+        ) : null}
+        {onForwardMessage ? (
+          <button
+            className="message-detail-action secondary"
+            disabled={isActionLoading}
+            type="button"
+            onClick={() => void onForwardMessage(message)}
+          >
+            转发
+          </button>
+        ) : null}
         <button
           className="message-detail-action secondary"
           disabled={isActionLoading}

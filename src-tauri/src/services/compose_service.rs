@@ -300,7 +300,11 @@ mod tests {
     impl Default for InMemoryWorkspaceRepository {
         fn default() -> Self {
             Self {
-                snapshot: RefCell::new(Some(crate::infra::static_workspace::load_snapshot())),
+                snapshot: RefCell::new(Some(
+                    crate::services::workspace_service::tests::sample_processing_snapshot(
+                        "Workspace",
+                    ),
+                )),
             }
         }
     }
@@ -389,7 +393,7 @@ mod tests {
         )
         .expect("reply 草稿预填应成功");
 
-        assert_eq!(draft.account_id, "seed_primary-gmail");
+        assert_eq!(draft.account_id, "acct_primary-example-com");
         assert_eq!(draft.to, "noreply@github.com");
         assert_eq!(draft.subject, "Re: GitHub 安全验证码");
         assert!(
@@ -398,7 +402,7 @@ mod tests {
                 .contains("在 2026-04-05T08:58:00Z，noreply@github.com 写道："),
             "reply 应包含来源邮件引用头"
         );
-        assert!(draft.body.contains("> GitHub 安全验证码"));
+        assert!(draft.body.contains("> 你的 GitHub 登录验证码是 362149。"));
     }
 
     #[test]

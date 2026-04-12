@@ -294,9 +294,7 @@ where
                     .clone()
                     .ok_or_else(|| AppError::Validation {
                         field: "message.action".to_string(),
-                        message: format!(
-                            "濞戝牊浼?{message_id} 濞屸剝婀侀崣顖氼槻閸掑墎娈戞宀冪槈閻?"
-                        ),
+                        message: format!("消息 {message_id} 没有可复制的验证码"),
                     })?;
 
             (
@@ -313,9 +311,7 @@ where
                     .clone()
                     .ok_or_else(|| AppError::Validation {
                         field: "message.action".to_string(),
-                        message: format!(
-                            "濞戝牊浼?{message_id} 濞屸剝婀侀崣顖涘ⅵ瀵偓閻ㄥ嫰鐛欑拠渚€鎽奸幒?"
-                        ),
+                        message: format!("消息 {message_id} 没有可打开的验证链接"),
                     })?;
 
             (
@@ -646,7 +642,7 @@ fn resolve_workspace_site_context_from_snapshot(
     }
 }
 
-fn normalize_site_input(input: &str) -> Option<String> {
+pub(crate) fn normalize_site_input(input: &str) -> Option<String> {
     let trimmed = input.trim().to_lowercase();
 
     if trimmed.is_empty() {
@@ -701,7 +697,7 @@ fn site_candidate_score(site: &WorkspaceSiteSummary, query: &str) -> u8 {
     1
 }
 
-fn rebuild_message_groups(
+pub(crate) fn rebuild_message_groups(
     items: Vec<WorkspaceMessageItem>,
     existing_groups: &[WorkspaceMessageGroup],
 ) -> Vec<WorkspaceMessageGroup> {
@@ -748,7 +744,9 @@ fn rebuild_message_groups(
     .collect()
 }
 
-fn rebuild_mailboxes(message_groups: &[WorkspaceMessageGroup]) -> Vec<WorkspaceMailboxSummary> {
+pub(crate) fn rebuild_mailboxes(
+    message_groups: &[WorkspaceMessageGroup],
+) -> Vec<WorkspaceMailboxSummary> {
     let mut mailboxes = BTreeMap::<(String, WorkspaceMailboxKind), WorkspaceMailboxSummary>::new();
 
     for item in message_groups.iter().flat_map(|group| group.items.iter()) {
@@ -774,7 +772,7 @@ fn rebuild_mailboxes(message_groups: &[WorkspaceMessageGroup]) -> Vec<WorkspaceM
     mailboxes.into_values().collect()
 }
 
-fn rebuild_site_summaries(
+pub(crate) fn rebuild_site_summaries(
     existing_summaries: &[WorkspaceSiteSummary],
     message_details: &[WorkspaceMessageDetail],
     selected_message: &WorkspaceMessageDetail,
@@ -848,7 +846,7 @@ fn all_message_details<'a>(
     details
 }
 
-fn update_navigation_badges(
+pub(crate) fn update_navigation_badges(
     navigation: &mut [NavigationItem],
     message_groups: &[WorkspaceMessageGroup],
     site_count: usize,
@@ -882,7 +880,7 @@ fn count_accounts(message_groups: &[WorkspaceMessageGroup]) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         WorkspaceMessageFilter, WorkspaceSnapshotRepository, WorkspaceSyncSource,
         apply_workspace_message_action, confirm_workspace_site, list_workspace_mailboxes,
@@ -980,6 +978,15 @@ mod tests {
         let snapshot = load_workspace_bootstrap(&repository).expect("读取工作台快照应成功");
 
         assert_eq!(snapshot.default_view, WorkspaceViewId::RecentVerification);
+        assert!(snapshot.mailboxes.is_empty());
+        assert!(snapshot.message_groups.is_empty());
+        assert_eq!(
+            snapshot
+                .sync_status
+                .as_ref()
+                .map(|status| status.summary.as_str()),
+            Some("当前没有缓存邮件，请先添加账号并同步收件箱")
+        );
     }
 
     #[test]
@@ -1314,7 +1321,7 @@ mod tests {
         }
     }
 
-    fn sample_processing_snapshot(app_name: &str) -> WorkspaceBootstrapSnapshot {
+    pub(crate) fn sample_processing_snapshot(app_name: &str) -> WorkspaceBootstrapSnapshot {
         WorkspaceBootstrapSnapshot {
             app_name: app_name.to_string(),
             generated_at: "2026-04-05T09:00:00Z".to_string(),

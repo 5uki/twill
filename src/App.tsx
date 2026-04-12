@@ -1,6 +1,5 @@
 import { FluentProvider } from "@fluentui/react-components";
 import {
-  EditRegular,
   MailInboxRegular,
   PersonAccountsRegular,
   ServerRegular,
@@ -9,21 +8,12 @@ import {
 import { startTransition, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { AccountsWorkspace } from "./components/AccountsWorkspace";
-import { ComposeWorkspace } from "./components/ComposeWorkspace";
 import {
   buildAccountCommandInput,
   buildAccountConnectionCommandInput,
   createEmptyAccountFormDraft,
   type AccountFormDraft,
 } from "./components/account-form";
-import {
-  buildSendMessageCommandInput,
-  buildComposeFormDraft,
-  createEmptyComposeFormDraft,
-  prepareComposeDraftFromMessage,
-  syncComposeDraftAccount,
-  type ComposeFormDraft,
-} from "./components/compose-form";
 import { MailWorkspace } from "./components/MailWorkspace";
 import {
   Sidebar,
@@ -44,10 +34,8 @@ import {
   openExternalUrl,
   openWorkspaceMessage as openWorkspaceMessageFromApi,
   openWorkspaceMessageOriginal as openWorkspaceMessageOriginalFromApi,
-  prepareComposeDraft as prepareComposeDraftFromApi,
   readWorkspaceMessage,
   resolveWorkspaceSiteContext as resolveWorkspaceSiteContextFromApi,
-  sendMessage,
   syncWorkspace,
   testAccountConnection,
   updateWorkspaceMessageReadState,
@@ -56,10 +44,8 @@ import {
 import type {
   AccountConnectionTestResult,
   AccountSummary,
-  ComposeMode,
   MessageReadState,
   MessageStatus,
-  SendMessageResult,
   WorkspaceBootstrapSnapshot,
   WorkspaceExtractItem,
   WorkspaceMessageAction,
@@ -125,21 +111,10 @@ function App() {
   const [accountDraft, setAccountDraft] = useState<AccountFormDraft>(
     createEmptyAccountFormDraft(),
   );
-  const [composeDraft, setComposeDraft] = useState<ComposeFormDraft>(
-    createEmptyComposeFormDraft(),
-  );
-  const [composeMode, setComposeMode] = useState<ComposeMode>("new");
-  const [composeSourceMessage, setComposeSourceMessage] =
-    useState<WorkspaceMessageDetail | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
-  const [composeError, setComposeError] = useState<string | null>(null);
   const [probeResult, setProbeResult] =
     useState<AccountConnectionTestResult | null>(null);
-  const [composeResult, setComposeResult] = useState<SendMessageResult | null>(
-    null,
-  );
   const [isSaving, setIsSaving] = useState(false);
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
@@ -218,7 +193,6 @@ function App() {
           mapWorkspaceViewToCategory(workspaceResult.snapshot.default_view),
         );
         setAccounts(nextAccounts);
-        setComposeDraft((current) => syncComposeDraftAccount(current, nextAccounts));
         setSyncErrorMessage(workspaceResult.errorMessage);
       });
     };
@@ -385,38 +359,16 @@ function App() {
       icon: navigationIconMap[item.id],
     };
   });
-  const composeSidebarItem: SidebarItem = {
-    id: "compose",
-    label: getWorkspaceNavigationLabel("compose"),
-    badge: 0,
-    icon: <EditRegular />,
-  };
-
   const sidebarGroups: SidebarGroup[] = (["mail", "manage"] as const).map(
     (group) => ({
       id: group,
       label: getWorkspaceGroupLabel(group),
-      items:
-        group === "manage"
-          ? [
-              ...sidebarItems.filter((item) => getWorkspaceGroup(item.id) === group),
-              composeSidebarItem,
-            ]
-          : sidebarItems.filter((item) => getWorkspaceGroup(item.id) === group),
+      items: sidebarItems.filter((item) => getWorkspaceGroup(item.id) === group),
     }),
   );
 
   const updateAccountDraft = (field: keyof AccountFormDraft, value: string) => {
     setAccountDraft((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  };
-
-  const updateComposeDraft = (field: keyof ComposeFormDraft, value: string) => {
-    setComposeError(null);
-    setComposeResult(null);
-    setComposeDraft((current) => ({
       ...current,
       [field]: value,
     }));
@@ -428,7 +380,6 @@ function App() {
 
       startTransition(() => {
         setAccounts(nextAccounts);
-        setComposeDraft((current) => syncComposeDraftAccount(current, nextAccounts));
       });
     } catch (error) {
       setAccountError(getErrorMessage(error));
@@ -448,7 +399,6 @@ function App() {
         setAccounts(nextAccounts);
         setWorkspaceSnapshot(workspaceResult.snapshot);
         setAccountDraft(createEmptyAccountFormDraft());
-        setComposeDraft((current) => syncComposeDraftAccount(current, nextAccounts));
         setProbeResult(null);
         setSyncErrorMessage(workspaceResult.errorMessage);
       });
@@ -489,80 +439,10 @@ function App() {
       startTransition(() => {
         setAccounts(nextAccounts);
         setWorkspaceSnapshot(workspaceResult.snapshot);
-        setComposeDraft((current) => syncComposeDraftAccount(current, nextAccounts));
         setSyncErrorMessage(workspaceResult.errorMessage);
       });
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    try {
-      setComposeError(null);
-      setComposeResult(null);
-      setIsSendingMessage(true);
-      const result = await sendMessage(buildSendMessageCommandInput(composeDraft));
-
-      startTransition(() => {
-        setComposeResult(result);
-        setComposeMode("new");
-        setComposeSourceMessage(null);
-        setComposeDraft(
-          syncComposeDraftAccount(
-            createEmptyComposeFormDraft(composeDraft.accountId),
-            accounts,
-          ),
-        );
-      });
-    } catch (error) {
-      setComposeError(getErrorMessage(error));
-    } finally {
-      setIsSendingMessage(false);
-    }
-  };
-
-  const handleResetCompose = () => {
-    startTransition(() => {
-      setComposeError(null);
-      setComposeResult(null);
-      setComposeMode("new");
-      setComposeSourceMessage(null);
-      setComposeDraft((current) =>
-        syncComposeDraftAccount(
-          createEmptyComposeFormDraft(current.accountId),
-          accounts,
-        ),
-      );
-    });
-  };
-
-  const handlePrepareCompose = async (
-    mode: Exclude<ComposeMode, "new">,
-    message: WorkspaceMessageDetail,
-  ) => {
-    try {
-      setMessageError(null);
-      setComposeError(null);
-      setComposeResult(null);
-
-      const preparedDraft = runtimeAvailable
-        ? await prepareComposeDraftFromApi({
-            mode,
-            source_message_id: message.id,
-          })
-        : prepareComposeDraftFromMessage(mode, message);
-
-      startTransition(() => {
-        setComposeMode(preparedDraft.mode);
-        setComposeSourceMessage(message);
-        setComposeDraft(
-          syncComposeDraftAccount(buildComposeFormDraft(preparedDraft), accounts),
-        );
-        setActiveCategory("compose");
-      });
-    } catch (error) {
-      setMessageError(getErrorMessage(error));
     }
   };
 
@@ -851,90 +731,66 @@ function App() {
                 void handleSyncWorkspace();
               }}
             />
-            {activeCategory === "compose" ? (
-              <ComposeWorkspace
-                accounts={accounts}
-                draft={composeDraft}
-                errorMessage={composeError}
-                isSending={isSendingMessage}
-                mode={composeMode}
-                result={composeResult}
-                runtimeAvailable={runtimeAvailable}
-                onDraftChange={updateComposeDraft}
-                onResetToNew={handleResetCompose}
-                onSend={() => {
-                  void handleSendMessage();
-                }}
-                sourceMessage={composeSourceMessage}
-              />
-            ) : (
-              <MailWorkspace
-                accountsView={
-                  <AccountsWorkspace
-                    accounts={accounts}
-                    draft={accountDraft}
-                    errorMessage={accountError}
-                    isSaving={isSaving}
-                    isTesting={isTesting}
-                    probeResult={probeResult}
-                    runtimeAvailable={runtimeAvailable}
-                    onDraftChange={updateAccountDraft}
-                    onRefresh={() => {
-                      void refreshAccounts();
-                    }}
-                    onSave={() => {
-                      void handleSaveAccount();
-                    }}
-                    onTest={() => {
-                      void handleTestAccount();
-                    }}
-                  />
+            <MailWorkspace
+              accountsView={
+                <AccountsWorkspace
+                  accounts={accounts}
+                  draft={accountDraft}
+                  errorMessage={accountError}
+                  isSaving={isSaving}
+                  isTesting={isTesting}
+                  probeResult={probeResult}
+                  runtimeAvailable={runtimeAvailable}
+                  onDraftChange={updateAccountDraft}
+                  onRefresh={() => {
+                    void refreshAccounts();
+                  }}
+                  onSave={() => {
+                    void handleSaveAccount();
+                  }}
+                  onTest={() => {
+                    void handleTestAccount();
+                  }}
+                />
+              }
+              category={activeCategory}
+              messageCategoryFilter={messageCategoryFilter}
+              messageError={messageError}
+              messages={visibleMessages}
+              selectedMessage={selectedMessage}
+              selectedMessageId={selectedMessageId}
+              showOlderVerificationMessages={showOlderVerificationMessages}
+              snapshot={workspaceSnapshot}
+              isReadingLoading={isReadingLoading}
+              onMessageCategoryChange={setMessageCategoryFilter}
+              onMessageAction={async (action) => {
+                if (!selectedMessageIdRef.current) {
+                  return;
                 }
-                category={activeCategory}
-                messageCategoryFilter={messageCategoryFilter}
-                messageError={messageError}
-                messages={visibleMessages}
-                selectedMessage={selectedMessage}
-                selectedMessageId={selectedMessageId}
-                showOlderVerificationMessages={showOlderVerificationMessages}
-                snapshot={workspaceSnapshot}
-                isReadingLoading={isReadingLoading}
-                onMessageCategoryChange={setMessageCategoryFilter}
-                onMessageAction={async (action) => {
-                  if (!selectedMessageIdRef.current) {
-                    return;
-                  }
 
-                  await handleWorkspaceMessageAction(
-                    selectedMessageIdRef.current,
-                    action,
-                  );
-                }}
-                onExtractAction={handleExtractAction}
-                onMessageStatusChange={(status) => {
-                  void handleUpdateMessageStatus(status);
-                }}
-                onMessageReadStateChange={(readState) => {
-                  void handleUpdateMessageReadState(readState);
-                }}
-                onMessageSelect={(messageId) => {
-                  void handleSelectMessage(messageId);
-                }}
-                onOpenOriginalMessage={() => {
-                  void handleOpenOriginalMessage();
-                }}
-                onForwardMessage={(message) => {
-                  void handlePrepareCompose("forward", message);
-                }}
-                onReplyMessage={(message) => {
-                  void handlePrepareCompose("reply", message);
-                }}
-                onToggleVerificationWindow={() => {
-                  setShowOlderVerificationMessages((current) => !current);
-                }}
-                onOpenVerificationLink={(url) => openExternalUrl(url)}
-              />
-            )}
+                await handleWorkspaceMessageAction(
+                  selectedMessageIdRef.current,
+                  action,
+                );
+              }}
+              onExtractAction={handleExtractAction}
+              onMessageStatusChange={(status) => {
+                void handleUpdateMessageStatus(status);
+              }}
+              onMessageReadStateChange={(readState) => {
+                void handleUpdateMessageReadState(readState);
+              }}
+              onMessageSelect={(messageId) => {
+                void handleSelectMessage(messageId);
+              }}
+              onOpenOriginalMessage={() => {
+                void handleOpenOriginalMessage();
+              }}
+              onToggleVerificationWindow={() => {
+                setShowOlderVerificationMessages((current) => !current);
+              }}
+              onOpenVerificationLink={(url) => openExternalUrl(url)}
+            />
           </div>
         </div>
       </div>
